@@ -1,0 +1,7 @@
+website:
+  sidebar:
+    contents:
+      - index.ipynb
+      - aa-mixer.ipynb
+      - core.ipynb
+      - mem-rx.ipynb
