@@ -3,7 +3,7 @@
 # %% auto 0
 __all__ = ['get_alphas_sigmas', 'get_crash_schedule', 'alpha_sigma_to_t', 'sample', 'DiffusionDVAE']
 
-# %% ../DiffusionDVAE.ipynb 3
+# %% ../DiffusionDVAE.ipynb 4
 from copy import deepcopy
 import math
 import os, sys
@@ -31,25 +31,25 @@ from dvae.residual_memcodes import ResidualMemcodes
 from decoders.diffusion_decoder import DiffusionAttnUnet1D
 from diffusion.model import ema_update
 
-# %% ../DiffusionDVAE.ipynb 4
+# %% ../DiffusionDVAE.ipynb 5
 def get_alphas_sigmas(t):
     """Returns the scaling factors for the clean image (alpha) and for the
     noise (sigma), given a timestep."""
     return torch.cos(t * math.pi / 2), torch.sin(t * math.pi / 2)
 
-# %% ../DiffusionDVAE.ipynb 5
+# %% ../DiffusionDVAE.ipynb 6
 def get_crash_schedule(t):
     sigma = torch.sin(t * math.pi / 2) ** 2
     alpha = (1 - sigma ** 2) ** 0.5
     return alpha_sigma_to_t(alpha, sigma)
 
-# %% ../DiffusionDVAE.ipynb 6
+# %% ../DiffusionDVAE.ipynb 7
 def alpha_sigma_to_t(alpha, sigma):
     """Returns a timestep, given the scaling factors for the clean image and for
     the noise."""
     return torch.atan2(sigma, alpha) / math.pi * 2
 
-# %% ../DiffusionDVAE.ipynb 7
+# %% ../DiffusionDVAE.ipynb 8
 @torch.no_grad()
 def sample(model, x, steps, eta, logits):
     """Draws samples from a model given starting noise."""
@@ -93,7 +93,7 @@ def sample(model, x, steps, eta, logits):
     # If we are on the last timestep, output the denoised image
     return pred
 
-# %% ../DiffusionDVAE.ipynb 8
+# %% ../DiffusionDVAE.ipynb 9
 class DiffusionDVAE(pl.LightningModule):
     def __init__(self, global_args):
         super().__init__()
