@@ -1,0 +1,9 @@
+project:
+  output-dir: _docs
+
+website:
+  title: "audio-algebra"
+  site-url: "https://drscotthawley.github.io/audio-algebra"
+  description: "alchemy with embeddings"
+  repo-branch: master
+  repo-url: "https://github.com/drscotthawley/audio-algebra"
