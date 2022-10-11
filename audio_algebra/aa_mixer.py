@@ -4,7 +4,7 @@
 __all__ = ['get_alphas_sigmas', 'get_crash_schedule', 'alpha_sigma_to_t', 'sample', 'DiffusionDVAE', 'EmbedBlock', 'AudioAlgebra',
            'aa_demo', 'get_stems_faders', 'main']
 
-# %% ../aa-mixer.ipynb 4
+# %% ../aa-mixer.ipynb 3
 from prefigure.prefigure import get_all_args, push_wandb_config
 from copy import deepcopy
 import math
@@ -37,7 +37,7 @@ from dvae.residual_memcodes import ResidualMemcodes
 from decoders.diffusion_decoder import DiffusionAttnUnet1D
 from diffusion.model import ema_update
 
-# %% ../aa-mixer.ipynb 6
+# %% ../aa-mixer.ipynb 5
 #audio-diffusion stuff 
 # Define the noise schedule and sampling loop
 def get_alphas_sigmas(t):
@@ -195,7 +195,7 @@ class DiffusionDVAE(pl.LightningModule):
         audio_out = rearrange(fake_batches, 'b d n -> d (b n)') # Put the demos together
         return audio_out
 
-# %% ../aa-mixer.ipynb 12
+# %% ../aa-mixer.ipynb 11
 class EmbedBlock(nn.Module):
     def __init__(self, dims:int, **kwargs) -> None:
         super().__init__()
@@ -290,7 +290,7 @@ class AudioAlgebra(nn.Module):
                 loss += 1/300*(sum(magdiffs2)/len(magdiffs2)).mean() # mean of l2 of diff in vector mag  extra .mean() for good measure  
         return loss
 
-# %% ../aa-mixer.ipynb 14
+# %% ../aa-mixer.ipynb 13
 def aa_demo(autoencoder, log_dict, zsum, zmix, step, demo_steps=35, sr=48000):
     "log decoded audio for zsum and zmix"
     for var,name in zip([zsum, zmix],['zsum','zmix']):
@@ -302,7 +302,7 @@ def aa_demo(autoencoder, log_dict, zsum, zmix, step, demo_steps=35, sr=48000):
         #log_dict[f'{name}_spec'] = wandb.Image( tokens_spectrogram_image(var.detach()) )
     return log_dict
 
-# %% ../aa-mixer.ipynb 16
+# %% ../aa-mixer.ipynb 15
 def get_stems_faders(batch, dl:torchdata.DataLoader, maxstems=6):
     "grab some more audio stems and set fader values"
     nstems = 1 + int(torch.randint(maxstems-1,(1,1))[0][0].numpy()) # an int between 1 and maxstems, PyTorch style :-/
@@ -314,7 +314,7 @@ def get_stems_faders(batch, dl:torchdata.DataLoader, maxstems=6):
         stems.append(next(dl_iter)) 
     return stems, faders
 
-# %% ../aa-mixer.ipynb 26
+# %% ../aa-mixer.ipynb 25
 def main():
 
     args = get_all_args()
@@ -475,7 +475,7 @@ def main():
     except KeyboardInterrupt:
         pass
 
-# %% ../aa-mixer.ipynb 27
+# %% ../aa-mixer.ipynb 26
 # Not needed if listed in console_scripts in settings.ini
 if __name__ == '__main__' and "get_ipython" not in dir():  # don't execute in notebook
     main() 

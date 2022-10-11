@@ -1,5 +1,6 @@
 _docs/
 _proc/
+v-diffusion-pytorch/
 
 *.bak
 .gitattributes
@@ -13,6 +14,7 @@ _tmp*
 tmp*
 tags
 *.pkg
+*.ckpt 
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

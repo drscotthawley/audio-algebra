@@ -2,6 +2,6 @@ website:
   sidebar:
     contents:
       - index.ipynb
+      - DiffusionDVAE.ipynb
       - aa-mixer.ipynb
       - core.ipynb
-      - mem-rx.ipynb
