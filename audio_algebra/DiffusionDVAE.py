@@ -24,7 +24,7 @@ from einops import rearrange
 from nwt_pytorch import Memcodes
 
 # audio-diffusion imports
-from diffusion.pqmf import CachedPQMF as PQMF
+from diffusion.pqmf import CachedPQMF as PQMF # may require some manual labor/ symlinking directories
 from encoders.encoders import AttnResEncoder1D
 from autoencoders.soundstream import SoundStreamXLEncoder
 from dvae.residual_memcodes import ResidualMemcodes
