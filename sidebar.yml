@@ -4,4 +4,5 @@ website:
       - index.ipynb
       - Destructo.ipynb
       - DiffusionDVAE.ipynb
+      - aa-mixer-toy.ipynb
       - aa-mixer.ipynb
