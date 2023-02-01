@@ -45,7 +45,7 @@ class DualEffectsDataset(torch.utils.data.Dataset):
         max_redraws=2,        # when redrawing silences, don't do it more than this many
         augs='Stereo(), PhaseFlipper()', # list of augmentation transforms **after PadCrop**, as a string
         #effects=[],         # these are 'different' from augmentations. these are possible effects to choose 1 from (randomly)
-        effects_list = [Gain, BandPassFilter, BandStopFilter, HighPassFilter, LowPassFilter, PitchShift, TanhDistortion],
+        effects_list = [Gain, BandPassFilter, BandStopFilter, HighPassFilter, LowPassFilter],# , PitchShift, TanhDistortion],
         verbose=False,       # whether to print notices of reasampling or not
         ):
         super().__init__()

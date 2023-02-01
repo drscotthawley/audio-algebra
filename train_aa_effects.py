@@ -29,9 +29,14 @@ from audio_algebra.given_models import SpectrogramAE, MagSpectrogramAE, MelSpect
 from audio_algebra.DiffusionDVAE import DiffusionDVAE, sample
 
 
+from audiomentations import *   # list of effects
+ 
+
 # Lightning: 1. import Lightning
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import LearningRateMonitor
+from pytorch_lightning.utilities import rank_zero_only
+
 
 # Lightning: 2. define LightningModule
 class AAEffectsModule(pl.LightningModule):
@@ -156,12 +161,14 @@ def main():
     # Lightning: 3. define a dataset
     print("Setting up dataset")
     torch.manual_seed(args.seed)
-    train_set = DualEffectsDataset([args.training_dir], load_frac=args.load_frac, debug=False) 
+    effects_list = [Gain, BandPassFilter, BandStopFilter, HighPassFilter, LowPassFilter]
+
+    train_set = DualEffectsDataset([args.training_dir], load_frac=args.load_frac, effects_list=effects_list) 
     train_dl = utils.data.DataLoader(train_set, args.batch_size, shuffle=True,
                     num_workers=args.num_workers, persistent_workers=True, pin_memory=True)
 
     # TODO: make val unique! for now just repeat train & hope for no repeats (train is shuffled, val is not)
-    val_set = DualEffectsDataset([args.training_dir], load_frac=args.load_frac/4, debug=False)
+    val_set = DualEffectsDataset([args.training_dir], load_frac=args.load_frac/4, effects_list=effects_list)
     val_dl = utils.data.DataLoader(train_set, args.batch_size, shuffle=False,
                     num_workers=args.num_workers, persistent_workers=True, pin_memory=True)
 
@@ -193,7 +200,7 @@ def main():
 
     # Lightning: 4: Train the model  --- add more options
     ckpt_callback = pl.callbacks.ModelCheckpoint(every_n_train_steps=args.checkpoint_every, save_top_k=-1)
-    demo_callback = DemoCallback(val_dl, given_model, aa_model, device, global_args)
+    demo_callback = DemoCallback(val_dl, given_model, aa_model, device, args)
     exc_callback = ExceptionCallback()
 
     lr_monitor = LearningRateMonitor(logging_interval='step')
