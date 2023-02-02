@@ -122,7 +122,8 @@ class DemoCallback(pl.Callback):
         last_demo_step = trainer.global_step
 
         batch = next(self.demo_dl)
-        archive = do_mixing(batch, self.given_model, self.aa_model, self.device)
+        with torch.no_grad():
+            archive = do_mixing(batch, self.given_model, self.aa_model, self.device)
         # zs are the projections from aa_model, archive["yz"] are reps from given_model
         za1, zb1, za2, zb2 = archive["zs"] # a & b are two audio clips, 1 and 2 are effects
         za2_guess = zb2 - zb1 + za1     # try to enforce enfoce algebraic property 
