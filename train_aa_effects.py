@@ -24,7 +24,7 @@ import wandb
 from aeiou.viz import *
 from aeiou.hpc import freeze
 from audio_algebra.datasets import DualEffectsDataset
-from audio_algebra.aa_effects import do_mixing, AudioAlgebra
+from audio_algebra.aa_effects import *
 from audio_algebra.given_models import SpectrogramAE, MagSpectrogramAE, MelSpectrogramAE, DVAEWrapper
 from audio_algebra.DiffusionDVAE import DiffusionDVAE, sample
 
@@ -40,43 +40,65 @@ from pytorch_lightning.utilities import rank_zero_only
 
 # Lightning: 2. define LightningModule
 class AAEffectsModule(pl.LightningModule):
-    def __init__(self, given_model, aa_model, train_dl):
+    def __init__(self, given_model, aa_model, train_dl, debug=False):
         super().__init__()
-        self.given_model, self.aa_model, self.train_dl = given_model, aa_model, train_dl
+        self.given_model, self.aa_model, self.train_dl, self.debug = given_model, aa_model, train_dl, debug
         self.train_iter = iter(train_dl)
         self.batch_shape = None 
+        
 
     def training_step(self, batch, batch_idx):   
+        if self.debug: print("\nStarting AAEffectsModule.training_step")
+
+        mseloss = nn.MSELoss()
         
         # vicreg: 1. invariance
-        archive = do_mixing(batch, self.given_model, self.aa_model, self.device)
-        # zs are the projections from aa_model,  archive["yz"] are reps from given_model
-        za1, zb1, za2, zb2 = archive["zs"] # a & b are two audio clips, 1 and 2 are effects
-        za2_guess = zb2 - zb1 + za1     # try to enforce enfoce algebraic property 
-        zb2_guess = za2 - za1 + zb1
-        mix_loss = (mseloss(za2_guess, za2)  +  mseloss(zb2_guess, zb2))/2
+        if self.debug: print("   calling do_mixing")
+        with torch.cuda.amp.autocast():
+            archive = do_mixing(batch, self.given_model, self.aa_model, self.device)
+            # zs are the projections from aa_model,  archive["yz"] are reps from given_model
+            [za1, zb1, za2, zb2] = [x.float() for x in archive["zs"]] # a & b are two audio clips, 1 and 2 are effects
+            
+            za2_guess = zb2 - zb1 + za1     # try to enforce enfoce algebraic property 
+            zb2_guess = za2 - za1 + zb1
+            if self.debug: print("   computing losses: mix_loss")
+            mix_loss = (mseloss(za2_guess, za2)  +  mseloss(zb2_guess, zb2))/2
         
-        var_loss = (vicreg_var_loss(za2_guess) + vicreg_var_loss(zb2_guess))/2    # vicreg: 2. variance
-        cov_loss = (vicreg_cov_loss(za2_guess) + vicreg_cov_loss(zb2_guess))/2    # vicreg: 3. covariance
+            #var_loss = (vicreg_var_loss(za2_guess) + vicreg_var_loss(zb2_guess))/2    # vicreg: 2. variance
+            #cov_loss = (vicreg_cov_loss(za2_guess) + vicreg_cov_loss(zb2_guess))/2    # vicreg: 3. covariance
+            if self.debug: print("   computing losses: var_loss")
+            var_loss = (vicreg_var_loss(za1) + vicreg_var_loss(za2) + vicreg_var_loss(zb1) + vicreg_var_loss(zb2))/4  # vicreg: 2. variance
+            if self.debug: print("   computing losses: cov_loss")
+            cov_loss = (vicreg_cov_loss(za1) + vicreg_cov_loss(za2) + vicreg_cov_loss(zb1) + vicreg_cov_loss(zb2))/4  # vicreg: 3. covariance
 
-        # reconstruction loss: inversion of aa map h^{-1}(z): z -> y,  i.e. train the aa decoder
-        aa_recon_loss = mseloss(archive["yrecons"][0], archive["ys"][0])
-        for i in range(1,4):
-            aa_recon_loss += mseloss(archive["yrecons"][i], archive["ys"][i]) 
 
-        loss = mix_loss + var_loss + cov_loss + aa_recon_loss     # --- full loss function
+            # reconstruction loss: inversion of aa map h^{-1}(z): z -> y,  i.e. train the aa decoder
+            if self.debug: print("   computing losses: recon_loss")
+            aa_recon_loss = mseloss(archive["yrecons"][0].float(), archive["ys"][0].float())
+            for i in range(1,4):
+                aa_recon_loss += mseloss(archive["yrecons"][i].float(), archive["ys"][i].float()) 
 
+            if self.debug: 
+                print("   losses: computing full loss")
+                print("      mix_loss = ",mix_loss)
+                print("      var_loss = ",var_loss)
+                print("      cov_loss = ",cov_loss)
+                print("      aa_recon_loss = ",aa_recon_loss)
+            loss = mix_loss + var_loss + cov_loss + aa_recon_loss     # --- full loss function
+
+        if self.debug: print("   full loss calculated. setting log_dict...")
         # logging during training
-        log_dict = {}
-        #log_dict['loss'] = loss.detach()                    # --- this is the full loss 
-        log_dict['mix_loss'] = mix_loss.detach() 
-        log_dict['aa_recon_loss'] = aa_recon_loss.detach()
-        log_dict['var_loss'] = var_loss.detach() 
-        log_dict['cov_loss'] = cov_loss.detach() 
+        log_dict = {
+            'tloss': loss.detach(),
+            'mix_loss': mix_loss.detach(),
+            'var_loss': var_loss.detach(),
+            'cov_loss': cov_loss.detach(),
+            'aa_recon_loss': aa_recon_loss.detach()
+        }
         #log_dict['learning_rate'] = self.opt.param_groups[0]['lr']
-        
-        
         self.log_dict(log_dict, prog_bar=True, on_step=True)
+
+        if self.debug: print("   training_step: returning loss\n")
 
         return loss
 
@@ -100,6 +122,7 @@ class DemoCallback(pl.Callback):
         self.demo_steps = global_args.demo_steps
         self.demo_dl = iter(val_dl)
         self.sample_rate = global_args.sample_rate
+        self.debug = True
 
     @rank_zero_only
     @torch.no_grad()
@@ -109,6 +132,7 @@ class DemoCallback(pl.Callback):
         if (trainer.global_step - 1) % self.demo_every != 0 or last_demo_step == trainer.global_step:
         #if trainer.current_epoch % self.demo_every != 0:
             return
+        if self.debug: print("\nin DemoCallback.on_train_batch_end")
         last_demo_step = trainer.global_step
 
         batch = next(self.demo_dl)
@@ -119,30 +143,37 @@ class DemoCallback(pl.Callback):
         zb2_guess = za2 - za1 + zb1
 
         #ya1, yb1, ya2, yb2 = archive["ys"] # a & b are two audio clips, 1 and 2 are effects
-
-        try:   # don't crash the whole run just because logging fails
+        if self.debug: print("trying to log to wandb")
+        #try:   # don't crash the whole run just because logging fails
+        try:
             log_dict = {}
             e1names, e2names = batch["e1"], batch["e2"]  # these are batches of names of audio effects 
+            if self.debug: print("effects: [1,2]: ",list(zip(e1names, e2names)))
 
             for var, name in zip([za1, zb1, za2, zb2],["za1", "zb1", "za2", "zb2"]):
-               #log_dict[f'emb_table_{name}'] = embeddings_table(var)
-               var = rearrange(var,'b d n -> d (b n)')   # pack batches as successive groups of time-domain samples
-               log_dict[f'{name}_3dpca'] = pca_point_cloud(var, output_type='plotly', mode='lines+markers')
-               log_dict[f'{name}_spec'] = wandb.Image(tokens_spectrogram_image(var))
+                if self.debug: print(" logging: name = ",name) 
+                log_dict[f'{name}_3dpca'] = pca_point_cloud(var, output_type='plotly', mode='lines+markers')
+                log_dict[f'{name}_spec'] = wandb.Image(tokens_spectrogram_image(var))
 
             for key in ["a","b", "a1","b1", "a2","b2"]:  # audio
+                if self.debug: print("Logging: key =",key)
                 audio = batch[key]
+                if self.debug: print("    rearrangein',  audio.shape = ",audio.shape)
+                audio = rearrange(audio,'b d n -> d (b n)')   # pack batches as successive groups of time-domain samples
+                if self.debug: print("    new audio.shape = ",audio.shape)
+                log_dict[f'{key}_melspec_left'] = wandb.Image(audio_spectrogram_image(audio))
                 filename = f'{key}_{trainer.global_step:08}.wav'
                 audio = audio.clamp(-1, 1).mul(32767).to(torch.int16).cpu()
                 torchaudio.save(filename, audio, self.sample_rate)
-                log_dict[f'{key}'] = wandb.Audio(filename,
+                log_dict[f'{key}_audio'] = wandb.Audio(filename,
                                                 sample_rate=self.sample_rate,
                                                 caption=f'Inputs')
 
             trainer.logger.experiment.log(log_dict, step=trainer.global_step)
+            if self.debug: print("trainer logger set")
+
         except Exception as e:
             print(f'{type(e).__name__}: {e}', file=sys.stderr)
-
 
 
 
@@ -152,6 +183,7 @@ class DemoCallback(pl.Callback):
 ### MAIN ### 
 def main(): 
     args = get_all_args()
+    print("args = ",args)
 
     device = torch.device('cuda')  # this code runs on clusters only
     print('Using device:', device)
@@ -169,7 +201,7 @@ def main():
 
     # TODO: make val unique! for now just repeat train & hope for no repeats (train is shuffled, val is not)
     val_set = DualEffectsDataset([args.training_dir], load_frac=args.load_frac/4, effects_list=effects_list)
-    val_dl = utils.data.DataLoader(train_set, args.batch_size, shuffle=False,
+    val_dl = utils.data.DataLoader(train_set, args.num_demos, shuffle=False,
                     num_workers=args.num_workers, persistent_workers=True, pin_memory=True)
 
     torch.manual_seed(args.seed)  # one more seed init for ordering of iterator
