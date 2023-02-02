@@ -1,0 +1,14 @@
+flowchart LR
+  A(Stems x) --> |f| B(Encodings y)-->|h|D(Embeddings z)
+  A--> |sum|C(Mix) --> |f| E(ymix) --> |h|F(zmix)
+  D -->|h^-1|B
+  F -->|h^-1| E
+  D -->|sum|G(zsum)
+  F-.-|compare|G
+linkStyle 2 stroke-width:2px,fill:none,stroke:blue;
+linkStyle 7 stroke-width:2px,fill:none,stroke:blue;
+linkStyle 5 stroke-width:2px,fill:none,stroke:orange;
+linkStyle 6 stroke-width:2px,fill:none,stroke:orange;
+linkStyle 8 stroke-width:2px,fill:none,stroke:red;
+linkStyle 8 stroke-width:2px,fill:none,stroke:red;
+

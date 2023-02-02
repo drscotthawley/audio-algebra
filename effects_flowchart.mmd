@@ -1,0 +1,29 @@
+flowchart LR
+A(audio: a) -->|t1| B(Effect 1:\n a1)
+A -->|t2| C(Effect 2:\na2)
+B --> |f|G(Encodings:\nya1)
+C --> |f|H(ya2)
+G --> |h|I(Embeddgings:\nza1)
+H --> |h|J(za2)
+
+
+D(audio: b) -->|t1| E(b1)
+D -->|t2| F(b2)
+E --> |f|K(yb1)
+F --> |f|L(yb2)
+K --> |h|M(zb1)
+L --> |h|N(zb2)
+
+
+I --> |h^-1|G
+J --> |h^-1|H
+M --> |h^-1|K
+N --> |h^-1|L
+linkStyle 12 stroke-width:2px,fill:none,stroke:orange;
+linkStyle 13 stroke-width:2px,fill:none,stroke:orange;
+linkStyle 14 stroke-width:2px,fill:none,stroke:orange;
+linkStyle 15 stroke-width:2px,fill:none,stroke:orange;
+
+
+Y(Similarity/Invariance:\nza2 = zb2 - zb1 + za1\nzb2 = za2 - za1 + zb1)
+

@@ -61,29 +61,16 @@ class AAEffectsModule(pl.LightningModule):
             
             za2_guess = zb2 - zb1 + za1     # try to enforce enfoce algebraic property 
             zb2_guess = za2 - za1 + zb1
-            if self.debug: print("   computing losses: mix_loss")
             mix_loss = (mseloss(za2_guess, za2)  +  mseloss(zb2_guess, zb2))/2
         
-            #var_loss = (vicreg_var_loss(za2_guess) + vicreg_var_loss(zb2_guess))/2    # vicreg: 2. variance
-            #cov_loss = (vicreg_cov_loss(za2_guess) + vicreg_cov_loss(zb2_guess))/2    # vicreg: 3. covariance
-            if self.debug: print("   computing losses: var_loss")
             var_loss = (vicreg_var_loss(za1) + vicreg_var_loss(za2) + vicreg_var_loss(zb1) + vicreg_var_loss(zb2))/4  # vicreg: 2. variance
-            if self.debug: print("   computing losses: cov_loss")
             cov_loss = (vicreg_cov_loss(za1) + vicreg_cov_loss(za2) + vicreg_cov_loss(zb1) + vicreg_cov_loss(zb2))/4  # vicreg: 3. covariance
 
-
             # reconstruction loss: inversion of aa map h^{-1}(z): z -> y,  i.e. train the aa decoder
-            if self.debug: print("   computing losses: recon_loss")
             aa_recon_loss = mseloss(archive["yrecons"][0].float(), archive["ys"][0].float())
             for i in range(1,4):
                 aa_recon_loss += mseloss(archive["yrecons"][i].float(), archive["ys"][i].float()) 
 
-            if self.debug: 
-                print("   losses: computing full loss")
-                print("      mix_loss = ",mix_loss)
-                print("      var_loss = ",var_loss)
-                print("      cov_loss = ",cov_loss)
-                print("      aa_recon_loss = ",aa_recon_loss)
             loss = mix_loss + var_loss + cov_loss + aa_recon_loss     # --- full loss function
 
         if self.debug: print("   full loss calculated. setting log_dict...")
@@ -126,7 +113,6 @@ class DemoCallback(pl.Callback):
 
     @rank_zero_only
     @torch.no_grad()
-    #def on_train_epoch_end(self, trainer, module):
     def on_train_batch_end(self, trainer, module, outputs, batch, batch_idx):
         last_demo_step = -1
         if (trainer.global_step - 1) % self.demo_every != 0 or last_demo_step == trainer.global_step:
@@ -142,10 +128,8 @@ class DemoCallback(pl.Callback):
         za2_guess = zb2 - zb1 + za1     # try to enforce enfoce algebraic property 
         zb2_guess = za2 - za1 + zb1
 
-        #ya1, yb1, ya2, yb2 = archive["ys"] # a & b are two audio clips, 1 and 2 are effects
         if self.debug: print("trying to log to wandb")
-        #try:   # don't crash the whole run just because logging fails
-        try:
+        try:   # don't crash the whole run just because logging fails
             log_dict = {}
             e1names, e2names = batch["e1"], batch["e2"]  # these are batches of names of audio effects 
             if self.debug: print("effects: [1,2]: ",list(zip(e1names, e2names)))
@@ -155,10 +139,9 @@ class DemoCallback(pl.Callback):
                 log_dict[f'{name}_3dpca'] = pca_point_cloud(var, output_type='plotly', mode='lines+markers')
                 log_dict[f'{name}_spec'] = wandb.Image(tokens_spectrogram_image(var))
 
-            for key in ["a","b", "a1","b1", "a2","b2"]:  # audio
+            for key in ["a1","b1", "a2","b2"]:  # audio inputs a & b, with effects 1 and 2 applied
                 if self.debug: print("Logging: key =",key)
                 audio = batch[key]
-                if self.debug: print("    rearrangein',  audio.shape = ",audio.shape)
                 audio = rearrange(audio,'b d n -> d (b n)')   # pack batches as successive groups of time-domain samples
                 if self.debug: print("    new audio.shape = ",audio.shape)
                 log_dict[f'{key}_melspec_left'] = wandb.Image(audio_spectrogram_image(audio))
@@ -174,10 +157,6 @@ class DemoCallback(pl.Callback):
 
         except Exception as e:
             print(f'{type(e).__name__}: {e}', file=sys.stderr)
-
-
-
-
 
 
 ### MAIN ### 
