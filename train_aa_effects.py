@@ -11,6 +11,8 @@ import random
 import matplotlib.pyplot as plt
 import numpy as np
 
+from pathlib import Path
+
 import torch
 import torchaudio
 from torch import optim, nn, utils, Tensor
@@ -36,6 +38,12 @@ from audiomentations import *   # list of effects
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.utilities import rank_zero_only
+
+def vicreg_var_loss_l2(z, gamma=1, eps=1e-4):
+    std_z = torch.sqrt(z.var(dim=0) + eps)
+    return torch.mean(F.relu( (gamma - std_z))**2 )   # the relu gets us the max(0, ...)
+
+vicreg_var_loss = vicreg_var_loss_l2
 
 
 # Lightning: 2. define LightningModule
@@ -101,7 +109,7 @@ class ExceptionCallback(pl.Callback):
 
 
 class DemoCallback(pl.Callback):
-    def __init__(self, val_dl, given_model, aa_model, device, global_args):
+    def __init__(self, val_dl, given_model, aa_model, device, global_args, wandb_logger):
         super().__init__()
         self.given_model, self.aa_model, self.device = given_model, aa_model, device
         self.demo_every = global_args.demo_every
@@ -110,6 +118,7 @@ class DemoCallback(pl.Callback):
         self.demo_dl = iter(val_dl)
         self.sample_rate = global_args.sample_rate
         self.debug = True
+        self.wandb_logger = wandb_logger
 
     @rank_zero_only
     @torch.no_grad()
@@ -130,17 +139,22 @@ class DemoCallback(pl.Callback):
         zb2_guess = za2 - za1 + zb1
 
         if self.debug: print("trying to log to wandb")
-        try:   # don't crash the whole run just because logging fails
+        #try:   # don't crash the whole run just because logging fails
+        if True:
             log_dict = {}
             e1names, e2names = batch["e1"], batch["e2"]  # these are batches of names of audio effects 
             if self.debug: print("effects: [1,2]: ",list(zip(e1names, e2names)))
 
-            for var, name in zip([za1, zb1, za2, zb2],["za1", "zb1", "za2", "zb2"]):
-                if self.debug: print(" logging: name = ",name) 
-                log_dict[f'{name}_3dpca'] = pca_point_cloud(var, output_type='plotly', mode='lines+markers')
+            audios, melspecs, tokenspecs, pcs = [],[],[],[]
+            for var, name in zip([za1, za2, zb1, zb2],["za1", "za2", "zb1", "zb2"]):
+                if self.debug: print(" logging: name =",name, ", var.shape =",var.shape) 
+                log_dict[f'{name}_embeddings'] = embeddings_table(var)
+                log_dict[f'{name}_3dpca'] = pca_point_cloud(var, output_type='wandbobj', mode='lines+markers')
                 log_dict[f'{name}_spec'] = wandb.Image(tokens_spectrogram_image(var))
+                pcs.append(log_dict[f'{name}_3dpca'])
+                tokenspecs.append(log_dict[f'{name}_spec'])
 
-            for key in ["a1","b1", "a2","b2"]:  # audio inputs a & b, with effects 1 and 2 applied
+            for key in ["a1","a2", "b1","b2"]:  # audio inputs a & b, with effects 1 and 2 applied
                 if self.debug: print("Logging: key =",key)
                 audio = batch[key]
                 audio = rearrange(audio,'b d n -> d (b n)')   # pack batches as successive groups of time-domain samples
@@ -152,12 +166,26 @@ class DemoCallback(pl.Callback):
                 log_dict[f'{key}_audio'] = wandb.Audio(filename,
                                                 sample_rate=self.sample_rate,
                                                 caption=f'Inputs')
+                audios.append(log_dict[f'{key}_audio'])
+                melspecs.append(log_dict[f'{key}_melspec_left'])
 
-            trainer.logger.experiment.log(log_dict, step=trainer.global_step)
+            columns = ['soundfile', 'melspec', 'tokenspec', '3dpca']
+            data = [[s,m,t,p] for s, m, t, p in zip(audios, melspecs, tokenspecs,pcs)]
+            log_dict["global_step"] = trainer.global_step
+            trainer.logger.experiment.log(log_dict)
+
+            #columns = ['soundfile', 'ground truth', 'prediction']
+            #grount_truth = [ 'yes' for y_true in range(50)]
+            #predicted = ['yes' if y_pred%2 ==0 else 'no' for y_pred in range(50)]
+            #audio_paths = filter(lambda x: 'wav' in x.name, Path('./').iterdir())
+            #n = 10
+            #data = [[wandb.Audio(str(x_sound)), y_true, y_pred] for x_sound, y_true, y_pred in zip(audio_paths, grount_truth[:n], predicted[:n])]
+            #self.wandb_logger.log_table(key='sample_table', columns=columns, data=data, step=trainer.global_step)
+            #trainer.logger.log_table(key='sample_table', columns=columns, data=data)
             if self.debug: print("trainer logger set")
 
-        except Exception as e:
-            print(f'{type(e).__name__}: {e}', file=sys.stderr)
+        #except Exception as e:
+        #    print(f'{type(e).__name__}: {e}', file=sys.stderr)
 
 
 ### MAIN ### 
@@ -211,15 +239,15 @@ def main():
     print("aa_effects LightningModule ready to go!")
 
     # Lightning: 4: Train the model  --- add more options
-    ckpt_callback = pl.callbacks.ModelCheckpoint(every_n_train_steps=args.checkpoint_every, save_top_k=-1)
-    demo_callback = DemoCallback(val_dl, given_model, aa_model, device, args)
-    exc_callback = ExceptionCallback()
-
-    lr_monitor = LearningRateMonitor(logging_interval='step')
-
     wandb_logger = pl.loggers.WandbLogger(project=args.name)
     wandb_logger.watch(aa_effects)
     push_wandb_config(wandb_logger, args)
+
+    ckpt_callback = pl.callbacks.ModelCheckpoint(every_n_train_steps=args.checkpoint_every, save_top_k=-1)
+    demo_callback = DemoCallback(val_dl, given_model, aa_model, device, args, wandb_logger)
+    exc_callback = ExceptionCallback()
+
+    lr_monitor = LearningRateMonitor(logging_interval='step')
 
     trainer = pl.Trainer(
         gpus=args.num_gpus,
@@ -232,7 +260,7 @@ def main():
         callbacks=[ckpt_callback, lr_monitor, demo_callback, lr_monitor],
         logger=wandb_logger,
         log_every_n_steps=1,
-        max_epochs=40,
+        max_epochs=40000,
     )
     trainer.fit(model=aa_effects, train_dataloaders=train_dl, ckpt_path=args.ckpt_path)
 
