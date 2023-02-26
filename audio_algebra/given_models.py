@@ -46,7 +46,7 @@ class GivenModelClass(nn.Module):
         **kwargs,  # these are so that some models can ignore kwargs needed by others
         ):
         super().__init__()
-        self.make_sizes_match, self.orig_shape, self.zero_pad, self.device, self.ckpt_info  = make_sizes_match, None, zero_pad, device, ckpt_info
+        self.make_sizes_match, self.orig_shape, self.zero_pad, self.ckpt_info  = make_sizes_match, None, zero_pad, ckpt_info
         self.name = self.__class__.__name__  # just a shorthand
         mount_gdrive=True
         self.ckpt_dir = os.path.expanduser('~/checkpoints')
@@ -132,8 +132,8 @@ class SpectrogramAE(GivenModelClass):
         **kwargs,
     ):
         super().__init__()
-        self.encoder = T.Spectrogram(power=None, n_fft=n_fft, hop_length=hop_length, center=center, **kwargs).to(self.device)
-        self.decoder = T.InverseSpectrogram(    n_fft=n_fft, hop_length=hop_length, center=center, **kwargs).to(self.device)
+        self.encoder = T.Spectrogram(power=None, n_fft=n_fft, hop_length=hop_length, center=center, **kwargs)
+        self.decoder = T.InverseSpectrogram(    n_fft=n_fft, hop_length=hop_length, center=center, **kwargs)
         
     def encode(self, waveform: torch.Tensor,**kwargs) -> torch.Tensor:
         "Note that this produces complex numbers by default"
@@ -165,7 +165,7 @@ class MagSpectrogramAE(GivenModelClass):
         "Note that GriffinLim decoding *guesses* at the phase"
         return self.match_sizes( self.decoder(reps) )
 
-# %% ../given-models.ipynb 19
+# %% ../given-models.ipynb 18
 class MagDPhaseSpectrogramAE(GivenModelClass):
     "Magnitude + PhaseChange spectrogram encoder, Exact decoder"
     def __init__(self,
@@ -181,7 +181,7 @@ class MagDPhaseSpectrogramAE(GivenModelClass):
         super().__init__()
         self.encoder = T.Spectrogram(power=None, n_fft=n_fft, hop_length=hop_length, center=center, **kwargs)
         self.decoder = T.InverseSpectrogram(    n_fft=n_fft, hop_length=hop_length, center=center, **kwargs)
-        #self.gl = T.GriffinLim(          n_fft=n_fft, hop_length=hop_length, **kwargs).to(device)
+        #self.gl = T.GriffinLim(          n_fft=n_fft, hop_length=hop_length, **kwargs)
         self.use_cos, self.cheat, self.debug, self.init = use_cos, cheat, debug, init
         self.pi = 3.141592653589
         
@@ -230,7 +230,7 @@ class MagDPhaseSpectrogramAE(GivenModelClass):
             self.spec_new = spec
         return self.match_sizes( self.decoder(spec) )
 
-# %% ../given-models.ipynb 22
+# %% ../given-models.ipynb 21
 class MelSpectrogramAE(GivenModelClass):
     "Mel spectrogram encoder, GriffinLim decoder"
     def __init__(self,
@@ -259,7 +259,7 @@ class MelSpectrogramAE(GivenModelClass):
         recons = self.decode(reps)
         return (reps, recons)
 
-# %% ../given-models.ipynb 27
+# %% ../given-models.ipynb 26
 class DVAEWrapper(GivenModelClass):
     "Wrapper for (hawley's fork of) Zach's DiffusionDVAE"
     def __init__(self, 
@@ -337,7 +337,7 @@ class DVAEWrapper(GivenModelClass):
         self.model.eval() # disable randomness, dropout, etc...
         freeze(self.model)  # freeze the weights for inference
 
-# %% ../given-models.ipynb 33
+# %% ../given-models.ipynb 32
 class RAVEWrapper(GivenModelClass):
     "Wrapper for RAVE"
     def __init__(self,
