@@ -326,10 +326,10 @@ class DVAEWrapper(GivenModelClass):
         recon = rearrange(fake_batches, 'b d n -> d (b n)') # Put the demos together
         return recon
     
-    def setup(self):
+    def setup(self, gdrive=True):  
         ckpt_file = self.ckpt_info['ckpt_path']
         print(f"DVAE: attempting to load checkpoint {ckpt_file}")
-        self.get_checkpoint()
+        self.get_checkpoint(gdrive=gdrive)
         try:
             self.model = self.model.load_from_checkpoint(ckpt_file, global_args=self.global_args)
         except Exception as e:
