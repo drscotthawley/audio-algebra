@@ -49,7 +49,6 @@ class GivenModelClass(nn.Module):
         super().__init__()
         self.make_sizes_match, self.orig_shape, self.zero_pad, self.ckpt_info  = make_sizes_match, None, zero_pad, ckpt_info
         self.name = self.__class__.__name__  # just a shorthand
-        mount_gdrive=True
         self.ckpt_dir = os.path.expanduser('~/checkpoints')
         if not os.path.exists(self.ckpt_dir): os.makedirs(self.ckpt_dir)
     def setup(self, gdrive=True):
@@ -76,9 +75,11 @@ class GivenModelClass(nn.Module):
             from google.colab import drive
             drive.mount('/content/drive/') 
             ckpt_file = '/content/drive/'+self.ckpt_info['gdrive_path']
+
             while not os.path.exists(ckpt_file):
                 print(f"\nPROBLEM: Expected to find the checkpoint file at {ckpt_file} but it's not there.\nWhere is it? (Go to the File system in the left sidebar and find it)")
                 ckpt_file = input('Enter location of checkpoint file: ')
+            self.ckpt_info['ckpt_path']= ckpt_file
         else:
             ckpt_file = os.path.expanduser(self.ckpt_info['ckpt_path']) #'checkpoint.ckpt'
             if not os.path.exists(ckpt_file):
@@ -145,7 +146,7 @@ class SpectrogramAE(GivenModelClass):
         "this decoder offers perfect reconstruction"
         return self.match_sizes( self.decoder(reps) )
 
-# %% ../given-models.ipynb 16
+# %% ../given-models.ipynb 15
 class MagSpectrogramAE(GivenModelClass):
     "Magnitude spectrogram encoder, GriffinLim decoder"
     def __init__(self,
@@ -166,7 +167,7 @@ class MagSpectrogramAE(GivenModelClass):
         "Note that GriffinLim decoding *guesses* at the phase"
         return self.match_sizes( self.decoder(reps) )
 
-# %% ../given-models.ipynb 18
+# %% ../given-models.ipynb 17
 class MagDPhaseSpectrogramAE(GivenModelClass):
     "Magnitude + PhaseChange spectrogram encoder, Exact decoder"
     def __init__(self,
@@ -231,7 +232,7 @@ class MagDPhaseSpectrogramAE(GivenModelClass):
             self.spec_new = spec
         return self.match_sizes( self.decoder(spec) )
 
-# %% ../given-models.ipynb 21
+# %% ../given-models.ipynb 20
 class MelSpectrogramAE(GivenModelClass):
     "Mel spectrogram encoder, GriffinLim decoder"
     def __init__(self,
@@ -260,7 +261,7 @@ class MelSpectrogramAE(GivenModelClass):
         recons = self.decode(reps)
         return (reps, recons)
 
-# %% ../given-models.ipynb 26
+# %% ../given-models.ipynb 25
 class DVAEWrapper(GivenModelClass):
     "Wrapper for (hawley's fork of) Zach's DiffusionDVAE"
     def __init__(self, 
@@ -338,7 +339,7 @@ class DVAEWrapper(GivenModelClass):
         self.model.eval() # disable randomness, dropout, etc...
         freeze(self.model)  # freeze the weights for inference
 
-# %% ../given-models.ipynb 32
+# %% ../given-models.ipynb 31
 class RAVEWrapper(GivenModelClass):
     "Wrapper for RAVE"
     def __init__(self,
