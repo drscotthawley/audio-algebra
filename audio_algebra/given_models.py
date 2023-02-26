@@ -3,6 +3,7 @@
 # %% ../given-models.ipynb 5
 from __future__ import annotations  # for type hints LAION code samples
 import os
+import pathlib
 import numpy as np 
 import torch
 import torch.nn as nn
@@ -11,6 +12,8 @@ from torchaudio import transforms as T
 import pytorch_lightning as pl
 import math
 from tqdm import trange
+import subprocess
+
 
 # audio-diffusion imports
 from copy import deepcopy
@@ -23,10 +26,15 @@ from decoders.diffusion_decoder import DiffusionAttnUnet1D
 from diffusion.model import ema_update
 from einops import rearrange
 
+# rave imports
+import rave
+import gin
+
 from .DiffusionDVAE import DiffusionDVAE, sample
 
 # %% auto 0
-__all__ = ['GivenModelClass', 'SpectrogramAE', 'MagSpectrogramAE', 'MelSpectrogramAE', 'DVAEWrapper']
+__all__ = ['GivenModelClass', 'SpectrogramAE', 'MagSpectrogramAE', 'MagDPhaseSpectrogramAE', 'MelSpectrogramAE', 'DVAEWrapper',
+           'RAVEWrapper']
 
 # %% ../given-models.ipynb 8
 class GivenModelClass(nn.Module):
@@ -34,14 +42,16 @@ class GivenModelClass(nn.Module):
     def __init__(self,
         zero_pad=True,
         make_sizes_match=True,
-        device='cuda',
         ckpt_info={'ckpt_path':'', 'ckpt_url':'','ckpt_hash':'', 'gdrive_path':''}, # info on pretrained checkpoints
         **kwargs,  # these are so that some models can ignore kwargs needed by others
         ):
         super().__init__()
         self.make_sizes_match, self.orig_shape, self.zero_pad, self.device, self.ckpt_info  = make_sizes_match, None, zero_pad, device, ckpt_info
         self.name = self.__class__.__name__  # just a shorthand
-    def setup(self):
+        mount_gdrive=True
+        self.ckpt_dir = os.path.expanduser('~/checkpoints')
+        if not os.path.exists(self.ckpt_dir): os.makedirs(self.ckpt_dir)
+    def setup(self, gdrive=True):
         "Setup can include things such as downloading checkpoints"
         pass  
     def encode(self, waveform: torch.Tensor, **kwargs) -> torch.Tensor:
@@ -54,14 +64,14 @@ class GivenModelClass(nn.Module):
         recons = self.decode(reps)
         return (reps, recons)
     
-    def get_checkpoint(self):
+    def get_checkpoint(self, gdrive=True):
         "This just ensures that the checkpoint file (if one is available) will be present on the local disk at self.ckpt_info['ckpt_path']"
         if self.ckpt_info=={} or all(x=='' for x in self.ckpt_info.values()): 
             print("No checkpoint info available.")
             return
         #@title Mount or Download Checkpoint
         on_colab = os.path.exists('/content')
-        if on_colab:  # get it on colab
+        if on_colab and gdrive:  # on colab, try to mount checkpoint from drive unless user prefers download
             from google.colab import drive
             drive.mount('/content/drive/') 
             ckpt_file = '/content/drive/'+self.ckpt_info['gdrive_path']
@@ -69,8 +79,9 @@ class GivenModelClass(nn.Module):
                 print(f"\nPROBLEM: Expected to find the checkpoint file at {ckpt_file} but it's not there.\nWhere is it? (Go to the File system in the left sidebar and find it)")
                 ckpt_file = input('Enter location of checkpoint file: ')
         else:
-            ckpt_file = self.ckpt_info['ckpt_path'] #'checkpoint.ckpt'
+            ckpt_file = os.path.expanduser(self.ckpt_info['ckpt_path']) #'checkpoint.ckpt'
             if not os.path.exists(ckpt_file):
+                if self.debug: print(f"Can't find checkpoint file {ckpt_file}. Will try to download it..")
                 url = self.ckpt_info['ckpt_url']
                 # downloading large files from GDrive requires special treatment to bypass the dialog button it wants to throw up
                 id = url.split('/')[-2]
@@ -133,20 +144,18 @@ class SpectrogramAE(GivenModelClass):
         "this decoder offers perfect reconstruction"
         return self.match_sizes( self.decoder(reps) )
 
-# %% ../given-models.ipynb 15
+# %% ../given-models.ipynb 16
 class MagSpectrogramAE(GivenModelClass):
     "Magnitude spectrogram encoder, GriffinLim decoder"
     def __init__(self,
         n_fft=1024,   
         hop_length=256,
         center=True,
-        device='cuda',
         **kwargs,
     ):
         super().__init__()
-        self.encoder = T.Spectrogram(power=2, n_fft=n_fft, hop_length=hop_length, center=center, **kwargs).to(device)
-        self.decoder = T.GriffinLim(          n_fft=n_fft, hop_length=hop_length, **kwargs).to(device)
-        self.device = device
+        self.encoder = T.Spectrogram(power=2, n_fft=n_fft, hop_length=hop_length, center=center, **kwargs)
+        self.decoder = T.GriffinLim(          n_fft=n_fft, hop_length=hop_length, **kwargs)
         
     def encode(self, waveform: torch.Tensor, **kwargs) -> torch.Tensor:
         self.orig_shape = waveform.shape
@@ -156,7 +165,72 @@ class MagSpectrogramAE(GivenModelClass):
         "Note that GriffinLim decoding *guesses* at the phase"
         return self.match_sizes( self.decoder(reps) )
 
-# %% ../given-models.ipynb 17
+# %% ../given-models.ipynb 19
+class MagDPhaseSpectrogramAE(GivenModelClass):
+    "Magnitude + PhaseChange spectrogram encoder, Exact decoder"
+    def __init__(self,
+        n_fft=1024,   
+        hop_length=256,
+        center=True,   # used for fft argument
+        init='true',   # initial angle in decoder:'true'|'rand'|'zero'
+        use_cos=False, # use vector cosine rule to get angle
+        debug=False,
+        cheat=False,   # store original signal for comparison later
+        **kwargs,
+    ):
+        super().__init__()
+        self.encoder = T.Spectrogram(power=None, n_fft=n_fft, hop_length=hop_length, center=center, **kwargs)
+        self.decoder = T.InverseSpectrogram(    n_fft=n_fft, hop_length=hop_length, center=center, **kwargs)
+        #self.gl = T.GriffinLim(          n_fft=n_fft, hop_length=hop_length, **kwargs).to(device)
+        self.use_cos, self.cheat, self.debug, self.init = use_cos, cheat, debug, init
+        self.pi = 3.141592653589
+        
+    def encode(self, waveform: torch.Tensor, **kwargs) -> torch.Tensor:
+        self.orig_shape = waveform.shape
+        spec =  self.encoder(self.zero_pad_po2(waveform)) if self.zero_pad else self.encoder1(waveform)
+        mag, theta = torch.abs(spec), torch.angle(spec)
+        if self.debug: theta = torch.where(theta < 0, theta+2*self.pi, theta) # just to make it easier to compare later
+        if self.cheat: 
+            self.spec_orig, self.mag_orig, self.theta = spec, mag, theta
+        if self.use_cos:  # doesn't sound as good imho
+            x, y = torch.real(spec), torch.imag(spec)
+            mag_tm1 = torch.roll(mag, 1, -1)  # previus timestep rolled forward for subtraction/multiplication
+            x_tm1, y_tm1 = torch.roll(x, 1, -1), torch.roll(y, 1, -1)
+            numerator, denominator = (x*x_tm1 + y*y_tm1), (mag*mag_tm1)
+            acos_arg = torch.where( denominator==0, 1, numerator/denominator) # aviod nans, div by 0
+            acos_arg =  torch.clip( acos_arg , -1, 1) # another bounds check
+            dtheta = torch.acos(acos_arg)  # could perhaps approximate acos by sqrt(2*(1-cos_arg)) when cos_arg is near 1
+        else:  # this is faster and sounds better too. 
+            theta_tm1 = torch.roll(theta, 1, -1)
+            dtheta = theta-theta_tm1 # this can give bad vals when theta1/2 are on opposite sides of x=0 line
+            dtheta = torch.where(dtheta < 0, dtheta+2*self.pi, dtheta)  # force phase to be non-decreasing
+        dtheta[:,:,0] = theta[:,:,0]  # encode initial value of theta at first position, helps it sound better
+        return torch.concatenate((mag,dtheta))  #package mags together, dthetas together
+        
+        
+    def decode(self, reps: torch.Tensor, **kwargs) -> torch.Tensor:
+        "Note that GriffinLim decoding *guesses* at the phase"
+        nc = reps.shape[-3] // 2 # number of audio channels
+        mag, dtheta = reps[0:nc,:,:], reps[nc:,:,:] # split the packaging
+        #return self.gl(mag**2)  # griffin lim cop-out
+        if self.cheat:
+            theta = self.theta.clone() # cheating
+        else:
+            theta = torch.zeros(dtheta.shape).to(reps.device)
+            if self.init=='true':
+                theta[:,:,0] = dtheta[:,:,0]  # initial value of theta, helps it sound better vs. random or zeros
+            elif self.init=='rand':
+                theta[:,:,0] = torch.rand(dtheta.shape[:-1])
+            for t in range(1,reps.shape[-1]):  # integrate theta along the time (last) dimension
+                theta[:,:,t] = theta[:,:,t-1] + dtheta[:,:,t]
+                theta[:,:,t] = torch.where( theta[:,:,t] < 2*self.pi, theta[:,:,t], theta[:,:,t] - 2*self.pi)            
+        spec = mag* ( torch.cos(theta) + 1j*torch.sin(theta) )
+        if self.debug:
+            self.mag_new, self.theta_new = torch.abs(spec), theta
+            self.spec_new = spec
+        return self.match_sizes( self.decoder(spec) )
+
+# %% ../given-models.ipynb 22
 class MelSpectrogramAE(GivenModelClass):
     "Mel spectrogram encoder, GriffinLim decoder"
     def __init__(self,
@@ -164,14 +238,12 @@ class MelSpectrogramAE(GivenModelClass):
         n_fft=1024,   
         hop_length=256,
         center=True,
-        device='cuda',
         **kwargs, # these are mainly just so that we can ignore kwargs that other models need
     ):
         super().__init__()
-        self.encoder = nn.Sequential( T.MelSpectrogram(sample_rate=sample_rate, n_fft=n_fft, hop_length=hop_length, center=center, **kwargs)).to(device)
-        self.inv_melscale_t = T.InverseMelScale(n_stft=n_fft // 2 + 1).to(device) 
-        self.decoder = T.GriffinLim(n_fft=n_fft, hop_length=hop_length, **kwargs).to(device)
-        self.device = device
+        self.encoder = nn.Sequential( T.MelSpectrogram(sample_rate=sample_rate, n_fft=n_fft, hop_length=hop_length, center=center, **kwargs))
+        self.inv_melscale_t = T.InverseMelScale(n_stft=n_fft // 2 + 1)
+        self.decoder = T.GriffinLim(n_fft=n_fft, hop_length=hop_length, **kwargs)
         
     def encode(self, waveform: torch.Tensor, **kwargs) -> torch.Tensor:
         self.orig_shape = waveform.shape
@@ -187,12 +259,11 @@ class MelSpectrogramAE(GivenModelClass):
         recons = self.decode(reps)
         return (reps, recons)
 
-# %% ../given-models.ipynb 21
+# %% ../given-models.ipynb 27
 class DVAEWrapper(GivenModelClass):
     "Wrapper for (hawley's fork of) Zach's DiffusionDVAE"
     def __init__(self, 
         args_dict = {'num_quantizers':0, 'sample_size': 65536, 'demo_steps':50, 'sample_rate':48000, 'latent_dim': 64, 'pqmf_bands':1, 'ema_decay':0.995, 'num_quantizers':0},
-        device='cuda',
         debug=True,
         **kwargs,
     ):
@@ -206,7 +277,6 @@ class DVAEWrapper(GivenModelClass):
                         setattr(self, key, DictObj(val) if isinstance(val, dict) else val)
         self.global_args = DictObj(args_dict)
         self.model = DiffusionDVAE(self.global_args)
-        self.device = device
         self.noise = None 
         self.demo_steps = self.global_args.demo_steps
         self.demo_samples = self.global_args.sample_size 
@@ -214,19 +284,20 @@ class DVAEWrapper(GivenModelClass):
         self.ckpt_info={'ckpt_url':'https://drive.google.com/file/d/1C3NMdQlmOcArGt1KL7pH32KtXVCOfXKr/view?usp=sharing',
                         'ckpt_hash':'6a304c3e89ea3f7ca023f4c9accc5df8de0504595db41961cc7e8b0d07876ef5',
                         'gdrive_path':'MyDrive/AI/checkpoints/DiffusionDVAE.ckpt',
-                        'ckpt_path':'/fsx/shawley/checkpoints/dvae_checkpoint.ckpt'}
+                        'ckpt_path':'~/checkpoints/dvae_checkpoint.ckpt'}
     
     def encode_it(self, demo_reals):
         module = self.model
-        encoder_input = demo_reals
+        #demo_reals = demo_reals.to(self.device)
         #print("demo_reals.shape = ",demo_reals.shape)
 
-        if module.pqmf_bands > 1:
-            encoder_input = module.pqmf(demo_reals)
+        encoder_input = demo_reals
 
-        encoder_input = encoder_input.to(self.device)
-        demo_reals = demo_reals.to(self.device)
-        noise = torch.randn([demo_reals.shape[0], 2, self.demo_samples]).to(self.device)
+        if module.pqmf_bands > 1:
+            encoder_input = module.pqmf(demo_reals).to(demo_reals.device)
+
+        #encoder_input = encoder_input.to(demo_reals.device)
+        noise = torch.randn([demo_reals.shape[0], 2, self.demo_samples]).to(encoder_input.device)
 
         with torch.no_grad():
             embeddings = module.encoder_ema(encoder_input)
@@ -253,7 +324,7 @@ class DVAEWrapper(GivenModelClass):
         recon = rearrange(fake_batches, 'b d n -> d (b n)') # Put the demos together
         return recon
     
-    def setup(self, device='cuda'):
+    def setup(self):
         ckpt_file = self.ckpt_info['ckpt_path']
         print(f"DVAE: attempting to load checkpoint {ckpt_file}")
         self.get_checkpoint()
@@ -264,5 +335,49 @@ class DVAEWrapper(GivenModelClass):
         self.model.encode_it = self.encode_it
         self.model.quantized = self.global_args.num_quantizers > 0 
         self.model.eval() # disable randomness, dropout, etc...
-        self.model.to(self.device)
         freeze(self.model)  # freeze the weights for inference
+
+# %% ../given-models.ipynb 33
+class RAVEWrapper(GivenModelClass):
+    "Wrapper for RAVE"
+    def __init__(self,
+        pretrained_name='',
+        checkpoint_file='percussion.ts',
+        config_path='./v2.gin',  # this probably gets ignored
+        debug=True,
+        **kwargs,
+    ):
+        self.config_path = config_path
+        super().__init__()
+        self.debug = debug
+        self.ckpt_info={'ckpt_url':'',
+                        'ckpt_hash':'',
+                        'gdrive_path':'',
+                        'ckpt_path':f'{self.ckpt_dir}/{checkpoint_file}'}     
+        gin.parse_config_file(self.config_path)
+        self.model = rave.RAVE()
+        self.model.eval()
+   
+    def setup(self, gdrive=True):
+        "Setup can include things such as downloading checkpoints"
+        extension = pathlib.Path(self.ckpt_info['ckpt_path']).suffix
+        if self.debug: print("extension =",extension)
+        if extension == '.ts':
+            self.model = torch.jit.load(self.ckpt_info['ckpt_path'])
+        elif extension == '.ckpt':
+            self.model.load_state_dict(torch.load(self.ckpt_info['ckpt_path'])["state_dict"])
+        else:
+            print(f"Sorry, we don't know how to load {extension} checkpoint files. Weights will be uninitialized.")
+
+    def encode(self, waveform: torch.Tensor, **kwargs) -> torch.Tensor:
+        with torch.no_grad():
+            return self.model.encode(waveform)
+    def decode(self, reps: torch.Tensor, **kwargs) -> torch.Tensor:
+        with torch.no_grad():
+            return self.model.decode(reps) 
+    
+    def forward(self, waveform: torch.Tensor)-> (torch.Tensor, torch.Tensor):
+        "Calls .encode() and .decode() in succession, returns both results as tuple"
+        reps = self.encode(waveform)
+        recons = self.decode(reps)
+        return (reps, recons)
