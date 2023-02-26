@@ -30,6 +30,7 @@ from einops import rearrange
 import rave
 import gin
 
+from aeiou.hpc import freeze
 from .DiffusionDVAE import DiffusionDVAE, sample
 
 # %% auto 0
