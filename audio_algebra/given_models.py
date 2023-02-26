@@ -337,7 +337,7 @@ class DVAEWrapper(GivenModelClass):
         self.model.eval() # disable randomness, dropout, etc...
         freeze(self.model)  # freeze the weights for inference
 
-# %% ../given-models.ipynb 32
+# %% ../given-models.ipynb 33
 class RAVEWrapper(GivenModelClass):
     "Wrapper for RAVE"
     def __init__(self,
