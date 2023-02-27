@@ -3,7 +3,7 @@
 # %% ../given-models.ipynb 5
 from __future__ import annotations  # for type hints LAION code samples
 import os
-import pathlib
+from pathlib import Path
 import numpy as np 
 import torch
 import torch.nn as nn
@@ -83,20 +83,25 @@ class GivenModelClass(nn.Module):
         else:
             ckpt_file = os.path.expanduser(self.ckpt_info['ckpt_path']) #'checkpoint.ckpt'
             if not os.path.exists(ckpt_file):
-                if self.debug: print(f"Can't find checkpoint file {ckpt_file}. Will try to download it..")
                 url = self.ckpt_info['ckpt_url']
-                # downloading large files from GDrive requires special treatment to bypass the dialog button it wants to throw up
-                id = url.split('/')[-2]
-                #cmd = f'wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate \'https://docs.google.com/uc?export=download&id={id}\' -O- | sed -rn \'s/.*confirm=([0-9A-Za-z_]+).*/\1\\n/p\')&id={id}" -O {ckpt_file} && rm -rf /tmp/cookies.txt'
-                cmd = f"gdown -O {ckpt_file} {id}"
+                if self.debug: print(f"Can't find checkpoint file {ckpt_file}. Will try to download it from {url}")
+                if 'drive.google.com' in url:
+                    # downloading large files from GDrive requires special treatment to bypass the dialog button it wants to throw up
+                    id = url.split('/')[-2]
+                    #cmd = f'wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate \'https://docs.google.com/uc?export=download&id={id}\' -O- | sed -rn \'s/.*confirm=([0-9A-Za-z_]+).*/\1\\n/p\')&id={id}" -O {ckpt_file} && rm -rf /tmp/cookies.txt'
+                    cmd = f"gdown -O {ckpt_file} {id}"
+                else:
+                    print(f"Downloading to {ckpt_file}")
+                    cmd = f"curl -L {url} -o {ckpt_file}"
+                    if self.debug: print("cmd = ",cmd)
                 subprocess.run(cmd, shell=True, check=True) 
-                #!gdown -O {ckpt_file} {id}
 
-                print(f"\nSecurity: checking hash on downloaded checkpoint file...")
-                new_hash = subprocess.run(['shasum', '-a','256',ckpt_file], stdout=subprocess.PIPE).stdout.decode('utf-8').split(' ')[0]
-                #new_hash = subprocess.run(['md5sum',ckpt_file], stdout=subprocess.PIPE).stdout.decode('utf-8')
-                assert new_hash == self.ckpt_info['ckpt_hash'], "Hashes don't match. STOP THE NOTEBOOK. DO NOT EXECUTE."
-                print("Checkpoint hash checks out.")
+                if self.ckpt_info['ckpt_hash'] != '': # check the hash if it was given
+                    print(f"\nSecurity: checking hash on downloaded checkpoint file...")
+                    new_hash = subprocess.run(['shasum', '-a','256',ckpt_file], stdout=subprocess.PIPE).stdout.decode('utf-8').split(' ')[0]
+                    #new_hash = subprocess.run(['md5sum',ckpt_file], stdout=subprocess.PIPE).stdout.decode('utf-8')
+                    assert new_hash == self.ckpt_info['ckpt_hash'], "Hashes don't match. STOP THE NOTEBOOK. DO NOT EXECUTE."
+                    print("Checkpoint hash checks out.")
             else:
                 print("Checkpoint found!")
     
@@ -123,6 +128,7 @@ class GivenModelClass(nn.Module):
         new_x = torch.zeros(new_shape).to(x.device)
         new_x[:,:x.shape[-1]] = x
         return new_x
+  
 
 # %% ../given-models.ipynb 10
 class SpectrogramAE(GivenModelClass):
@@ -344,27 +350,30 @@ class RAVEWrapper(GivenModelClass):
     "Wrapper for RAVE"
     def __init__(self,
         pretrained_name='',
-        checkpoint_file='percussion.ts',
+        checkpoint_file='percussion',
         config_path='./v2.gin',  # this probably gets ignored
         debug=True,
         **kwargs,
     ):
         self.config_path = config_path
         super().__init__()
+        if Path(checkpoint_file).suffix == '': checkpoint_file +='.ts'
         self.debug = debug
-        self.ckpt_info={'ckpt_url':'',
+        self.ckpt_info={'ckpt_url':'https://play.forum.ircam.fr/rave-vst-api/get_model',
                         'ckpt_hash':'',
                         'gdrive_path':'',
-                        'ckpt_path':f'{self.ckpt_dir}/{checkpoint_file}'}     
+                        'ckpt_path':f'{self.ckpt_dir}/{checkpoint_file}'}  
+        self.ckpt_info['ckpt_url'] += "/"+Path(checkpoint_file).stem
         gin.parse_config_file(self.config_path)
         self.model = rave.RAVE()
         self.model.eval()
    
-    def setup(self, gdrive=True):
+    def setup(self, gdrive=False):
         "Setup can include things such as downloading checkpoints"
-        extension = pathlib.Path(self.ckpt_info['ckpt_path']).suffix
+        self.get_checkpoint(gdrive=gdrive)
+        extension = Path(self.ckpt_info['ckpt_path']).suffix
         if self.debug: print("extension =",extension)
-        if extension == '.ts':
+        if extension == '.ts' or extension=='':
             self.model = torch.jit.load(self.ckpt_info['ckpt_path'])
         elif extension == '.ckpt':
             self.model.load_state_dict(torch.load(self.ckpt_info['ckpt_path'])["state_dict"])
