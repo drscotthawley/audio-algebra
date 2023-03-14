@@ -35,7 +35,7 @@ from .DiffusionDVAE import DiffusionDVAE, sample
 
 # %% auto 0
 __all__ = ['GivenModelClass', 'SpectrogramAE', 'MagSpectrogramAE', 'MagDPhaseSpectrogramAE', 'MelSpectrogramAE', 'DVAEWrapper',
-           'RAVEWrapper']
+           'DMAE1d', 'RAVEWrapper']
 
 # %% ../given-models.ipynb 8
 class GivenModelClass(nn.Module):
@@ -75,7 +75,6 @@ class GivenModelClass(nn.Module):
             from google.colab import drive
             drive.mount('/content/drive/') 
             ckpt_file = '/content/drive/'+self.ckpt_info['gdrive_path']
-
             while not os.path.exists(ckpt_file):
                 print(f"\nPROBLEM: Expected to find the checkpoint file at {ckpt_file} but it's not there.\nWhere is it? (Go to the File system in the left sidebar and find it)")
                 ckpt_file = input('Enter location of checkpoint file: ')
@@ -95,7 +94,6 @@ class GivenModelClass(nn.Module):
                     cmd = f"curl -L {url} -o {ckpt_file}"
                     if self.debug: print("cmd = ",cmd)
                 subprocess.run(cmd, shell=True, check=True) 
-
                 if self.ckpt_info['ckpt_hash'] != '': # check the hash if it was given
                     print(f"\nSecurity: checking hash on downloaded checkpoint file...")
                     new_hash = subprocess.run(['shasum', '-a','256',ckpt_file], stdout=subprocess.PIPE).stdout.decode('utf-8').split(' ')[0]
@@ -106,13 +104,13 @@ class GivenModelClass(nn.Module):
                 print("Checkpoint found!")
     
     def match_sizes(self, recon) -> torch.Tensor:
-        "match recon size to original waveform size, if possible"
+        "match recon size to original waveform size, if possible. Need to have set self.orig_shape earlier"
         if self.make_sizes_match and (self.orig_shape is not None) and (recon.shape != self.orig_shape):
             if recon.shape[-1] > self.orig_shape[-1]:  # recon is longer
-                recon = recon[:,:self.orig_shape[-1]]
+                recon = recon[...,:self.orig_shape[-1]]
             else: # recon is shorter
                 recon2 = torch.zeros(self.orig_shape)  # slow but what are you gonna do
-                recon2[:,:self.orig_shape[-1]] = recon
+                recon2[...,:self.orig_shape[-1]] = recon
                 recon = recon2 
             assert recon.shape == self.orig_shape, f"Did not succeed in making size match. recon.shape ({recon.shape}) != self.orig_shape ({self.orig_shape})"
         return recon       
@@ -126,7 +124,7 @@ class GivenModelClass(nn.Module):
         new_shape = list(x.shape)
         new_shape[-1] = self.next_power_of_2(new_shape[-1])
         new_x = torch.zeros(new_shape).to(x.device)
-        new_x[:,:x.shape[-1]] = x
+        new_x[...,:x.shape[-1]] = x
         return new_x
   
 
@@ -345,7 +343,93 @@ class DVAEWrapper(GivenModelClass):
         self.model.eval() # disable randomness, dropout, etc...
         freeze(self.model)  # freeze the weights for inference
 
-# %% ../given-models.ipynb 31
+# %% ../given-models.ipynb 27
+import torch
+from audio_diffusion_pytorch.components import (
+    UNetV0,
+    LTPlugin,
+)
+from audio_diffusion_pytorch.models import DiffusionAE
+import torch
+import torchaudio
+import pyloudnorm as pyln
+from torch import nn
+from audio_encoders_pytorch import TanhBottleneck, MelE1d
+
+# %% ../given-models.ipynb 28
+class DMAE1d(GivenModelClass):
+    def __init__(self, debug=False):
+        super().__init__()
+        self.debug = debug
+        self.ckpt_info={'ckpt_url':'https://drive.google.com/file/d/1KKwPbM_Qmu5QvpAs3DdRaYlkaRTG-WJv/view?usp=share_link',
+                        'ckpt_path':'~/checkpoints/dmae1d_checkpoint.ckpt',
+                        'ckpt_hash':'a11a9c68e5962830b142202e25b3080f553a3a73cd944225b3c7d21fe8c631e9'}
+        self.resample_encode = T.Resample(48000, 44100)
+        self.resample_decode = T.Resample(44100, 48000)
+
+        UNet = LTPlugin(
+            UNetV0,
+            num_filters=128,
+            window_length=128,
+            stride=64,
+        )
+
+        self.model = DiffusionAE(
+            net_t=UNet,
+            dim=1, 
+            in_channels=2,
+            channels=[256, 512, 512, 512, 1024, 1024, 1024],
+            factors=[1, 2, 2, 2, 2, 2, 2],
+            linear_attentions=[0, 1, 1, 1, 1, 1, 1],
+            attention_features=64,
+            attention_heads=8,
+            items=[1, 2, 2, 2, 2, 2, 2],
+            encoder=MelE1d(
+                in_channels=2,
+                channels=512,
+                multipliers=[1, 1, 1],
+                factors=[2, 2],
+                num_blocks=[4, 8],
+                mel_channels=80,
+                mel_sample_rate=44100,
+                mel_normalize_log=True,
+                out_channels=32,
+                bottleneck=TanhBottleneck()
+            ),
+            inject_depth=4
+        )
+
+    def forward(self, waveform_in, *args, **kwargs):
+        self.orig_shape = waveform_in.shape
+        waveform = self.zero_pad_po2(self.resample_encode(waveform_in))
+        waveform_out = self.model(waveform, *args, **kwargs)
+        return self.match_sizes(self.resample_decode(waveform_out))
+
+    def encode(self, waveform_in, *args, **kwargs):
+        self.orig_shape = waveform_in.shape
+        waveform = self.zero_pad_po2(self.resample_encode(waveform_in))
+        return self.model.encode(waveform, *args, **kwargs)
+    
+    @torch.no_grad()
+    def decode(self, *args, **kwargs):
+        waveform_out = self.model.decode(*args, num_steps=50, show_progress=True, **kwargs)
+        return self.match_sizes(self.resample_decode(waveform_out))
+    
+    def setup(self, gdrive=True):  
+        ckpt_file = os.path.expanduser(self.ckpt_info['ckpt_path'])
+        print(f"DMAE1d: attempting to load checkpoint {ckpt_file}")
+        self.get_checkpoint(gdrive=gdrive)
+        try:
+            #self.model = self.model.load_from_checkpoint(ckpt_file, global_args=self.global_args)
+            ae_checkpoint = torch.load(ckpt_file, map_location=torch.device('cpu'))
+            # Load the model and optimizer state from the checkpoint
+            self.load_state_dict(ae_checkpoint["model_state_dict"], strict=True)
+        except Exception as e:
+            print(f"Sorry, exception = {e}. Going with random weights")
+        self.model.eval() # disable randomness, dropout, etc...
+        freeze(self.model)  # freeze the weights for inference
+
+# %% ../given-models.ipynb 34
 class RAVEWrapper(GivenModelClass):
     "Wrapper for RAVE"
     def __init__(self,
