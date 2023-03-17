@@ -1,0 +1,1315 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.2.335">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="description" content="Toy model of the (intended) Audio Algebra mixer model, or “abusing VICReg for fun and profit”">
+
+<title>audio-algebra - aa_mixer_toy</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1.6em;
+  vertical-align: middle;
+}
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+    color: #aaaaaa;
+  }
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+code span.at { color: #7d9029; } /* Attribute */
+code span.bn { color: #40a070; } /* BaseN */
+code span.bu { color: #008000; } /* BuiltIn */
+code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+code span.ch { color: #4070a0; } /* Char */
+code span.cn { color: #880000; } /* Constant */
+code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+code span.dt { color: #902000; } /* DataType */
+code span.dv { color: #40a070; } /* DecVal */
+code span.er { color: #ff0000; font-weight: bold; } /* Error */
+code span.ex { } /* Extension */
+code span.fl { color: #40a070; } /* Float */
+code span.fu { color: #06287e; } /* Function */
+code span.im { color: #008000; font-weight: bold; } /* Import */
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+code span.op { color: #666666; } /* Operator */
+code span.ot { color: #007020; } /* Other */
+code span.pp { color: #bc7a00; } /* Preprocessor */
+code span.sc { color: #4070a0; } /* SpecialChar */
+code span.ss { color: #bb6688; } /* SpecialString */
+code span.st { color: #4070a0; } /* String */
+code span.va { color: #19177c; } /* Variable */
+code span.vs { color: #4070a0; } /* VerbatimString */
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap.min.css" rel="stylesheet" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 20,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit"
+  }
+}</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" integrity="sha512-c3Nl8+7g4LMSTdrm621y7kf9v3SDPnhxLNhcjFJbKECVnmZHTdo+IRO05sNLTH/D3vA6u1X32ehoLC7WFVdheg==" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js" integrity="sha512-bLT0Qm9VnAYZDflyKcBaQ2gg0hSYNQrJ8RilYldYQ1FxQYoCLtUjuuRuZo+fjqhx/qtq/1itJ0C2ejDxltZVFg==" crossorigin="anonymous"></script>
+<script type="application/javascript">define('jquery', [],function() {return window.jQuery;})</script>
+<script src="https://unpkg.com/@jupyter-widgets/html-manager@*/dist/embed-amd.js" crossorigin="anonymous"></script>
+
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<link rel="stylesheet" href="styles.css">
+<meta property="og:title" content="audio-algebra - aa_mixer_toy">
+<meta property="og:description" content="Toy model of the (intended) Audio Algebra mixer model, or &quot;abusing VICReg for fun and profit&quot;">
+<meta property="og:site-name" content="audio-algebra">
+<meta name="twitter:title" content="audio-algebra - aa_mixer_toy">
+<meta name="twitter:description" content="Toy model of the (intended) Audio Algebra mixer model, or &quot;abusing VICReg for fun and profit&quot;">
+<meta name="twitter:card" content="summary">
+</head>
+
+<body class="nav-sidebar floating nav-fixed">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg navbar-dark ">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">audio-algebra</span>
+    </a>
+  </div>
+          <div id="quarto-search" class="" title="Search"></div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+    <div class="container-fluid d-flex justify-content-between">
+      <h1 class="quarto-secondary-nav-title">aa_mixer_toy</h1>
+      <button type="button" class="quarto-btn-toggle btn" aria-label="Show secondary navigation">
+        <i class="bi bi-chevron-right"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./index.html" class="sidebar-item-text sidebar-link">audio-algebra</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./destructo.html" class="sidebar-item-text sidebar-link">Destructo. 💣💥🤯 v0.1</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./diffusiondvae.html" class="sidebar-item-text sidebar-link">DiffusionDVAE</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./aa-effects.html" class="sidebar-item-text sidebar-link">aa_effects</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./aa-mixer-toy.html" class="sidebar-item-text sidebar-link active">aa_mixer_toy</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./aa-mixer.html" class="sidebar-item-text sidebar-link">aa_mixer</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./datasets.html" class="sidebar-item-text sidebar-link">datasets</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./given-models.html" class="sidebar-item-text sidebar-link">given_models</a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#basic-idea-terminology-and-goals" id="toc-basic-idea-terminology-and-goals" class="nav-link active" data-scroll-target="#basic-idea-terminology-and-goals">Basic idea, Terminology, and Goals</a>
+  <ul class="collapse">
+  <li><a href="#terminology" id="toc-terminology" class="nav-link" data-scroll-target="#terminology">Terminology</a></li>
+  <li><a href="#goals" id="toc-goals" class="nav-link" data-scroll-target="#goals">Goals</a></li>
+  <li><a href="#challenge-avoiding-collapse" id="toc-challenge-avoiding-collapse" class="nav-link" data-scroll-target="#challenge-avoiding-collapse">Challenge: Avoiding Collapse</a></li>
+  <li><a href="#but-this-is-a-toy-model" id="toc-but-this-is-a-toy-model" class="nav-link" data-scroll-target="#but-this-is-a-toy-model">But this is a toy model</a></li>
+  </ul></li>
+  <li><a href="#make-up-some-data" id="toc-make-up-some-data" class="nav-link" data-scroll-target="#make-up-some-data">Make up some data</a></li>
+  <li><a href="#generic-building-blocks" id="toc-generic-building-blocks" class="nav-link" data-scroll-target="#generic-building-blocks">Generic Building Blocks</a></li>
+  <li><a href="#the-given-autoencoder-f_thetax-x-mapsto-y" id="toc-the-given-autoencoder-f_thetax-x-mapsto-y" class="nav-link" data-scroll-target="#the-given-autoencoder-f_thetax-x-mapsto-y">The Given (Auto)Encoder: <span class="math inline">\(f_\theta(x): x \mapsto y\)</span></a></li>
+  <li><a href="#visualize-effects-of-given_model.encode-on-inputs" id="toc-visualize-effects-of-given_model.encode-on-inputs" class="nav-link" data-scroll-target="#visualize-effects-of-given_model.encode-on-inputs">Visualize Effects of <code>given_model.encode</code> on Inputs</a></li>
+  <li><a href="#the-aa-mixer-projector-model-h_phiy-y-mapsto-z" id="toc-the-aa-mixer-projector-model-h_phiy-y-mapsto-z" class="nav-link" data-scroll-target="#the-aa-mixer-projector-model-h_phiy-y-mapsto-z">The AA-mixer “Projector” model: <span class="math inline">\(h_\phi(y): y \mapsto z\)</span></a>
+  <ul class="collapse">
+  <li><a href="#get_stems_faders" id="toc-get_stems_faders" class="nav-link" data-scroll-target="#get_stems_faders">get_stems_faders:</a></li>
+  <li><a href="#instantiate-the-model" id="toc-instantiate-the-model" class="nav-link" data-scroll-target="#instantiate-the-model">Instantiate the model</a></li>
+  </ul></li>
+  <li><a href="#avoiding-collapse-vicreg" id="toc-avoiding-collapse-vicreg" class="nav-link" data-scroll-target="#avoiding-collapse-vicreg">Avoiding Collapse: VICReg</a>
+  <ul class="collapse">
+  <li><a href="#invariance" id="toc-invariance" class="nav-link" data-scroll-target="#invariance">1. Invariance</a></li>
+  <li><a href="#variance" id="toc-variance" class="nav-link" data-scroll-target="#variance">2. Variance</a></li>
+  <li><a href="#covariance" id="toc-covariance" class="nav-link" data-scroll-target="#covariance">3. Covariance</a></li>
+  <li><a href="#train-aa_model-with-vicreg" id="toc-train-aa_model-with-vicreg" class="nav-link" data-scroll-target="#train-aa_model-with-vicreg">Train <code>aa_model</code> with VICReg</a></li>
+  </ul></li>
+  <li><a href="#do-cool-stuff-with-trained-aa_model-requires-decoder-for-given_model" id="toc-do-cool-stuff-with-trained-aa_model-requires-decoder-for-given_model" class="nav-link" data-scroll-target="#do-cool-stuff-with-trained-aa_model-requires-decoder-for-given_model">Do Cool Stuff with trained <code>aa_model</code> (requires Decoder for <code>given_model</code>)</a>
+  <ul class="collapse">
+  <li><a href="#optional-train-the-decoder-of-the-given-autoencoder-i.e-f-1y-y-mapsto-x" id="toc-optional-train-the-decoder-of-the-given-autoencoder-i.e-f-1y-y-mapsto-x" class="nav-link" data-scroll-target="#optional-train-the-decoder-of-the-given-autoencoder-i.e-f-1y-y-mapsto-x">(Optional) Train the [Decoder of the] Given (Auto)Encoder, i.e <span class="math inline">\(f^{-1}(y): y \mapsto x\)</span></a></li>
+  <li><a href="#check-that-the-decoder-is-working" id="toc-check-that-the-decoder-is-working" class="nav-link" data-scroll-target="#check-that-the-decoder-is-working">Check that the decoder is working</a></li>
+  <li><a href="#algebra-1-king---man-woman-queen" id="toc-algebra-1-king---man-woman-queen" class="nav-link" data-scroll-target="#algebra-1-king---man-woman-queen">Algebra #1: “king - man + woman = queen”</a>
+  <ul class="collapse">
+  <li><a href="#forward-do-math-with-xs-then-map-to-zs.-guess-and-check" id="toc-forward-do-math-with-xs-then-map-to-zs.-guess-and-check" class="nav-link" data-scroll-target="#forward-do-math-with-xs-then-map-to-zs.-guess-and-check">“Forward”: Do math with x’s, then map to z’s. Guess and check?</a></li>
+  <li><a href="#backward-summation" id="toc-backward-summation" class="nav-link" data-scroll-target="#backward-summation">“Backward” summation</a></li>
+  </ul></li>
+  <li><a href="#algebra-2-demix-removing-things-from-a-mix" id="toc-algebra-2-demix-removing-things-from-a-mix" class="nav-link" data-scroll-target="#algebra-2-demix-removing-things-from-a-mix">Algebra #2: “Demix” removing things from a mix</a></li>
+  </ul></li>
+  </ul>
+<div class="toc-actions"><div><i class="bi bi-github"></i></div><div class="action-links"><p><a href="https://github.com/drscotthawley/audio-algebra/issues/new" class="toc-action">Report an issue</a></p></div></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title d-none d-lg-block">aa_mixer_toy</h1>
+</div>
+
+<div>
+  <div class="description">
+    Toy model of the (intended) Audio Algebra mixer model, or “abusing VICReg for fun and profit”
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+</header>
+
+<!-- WARNING: THIS FILE WAS AUTOGENERATED! DO NOT EDIT! -->
+<blockquote class="blockquote">
+<p><strong>NOTE: to view this notebook properly, open it via <a href="https://nbviewer.org/github/drscotthawley/audio-algebra/blob/main/aa-mixer-toy.ipynb">NBViewer</a> or <a href="https://colab.research.google.com/github/drscotthawley/audio-algebra/blob/main/aa-mixer-toy.ipynb">Colab</a>.</strong> GitHub won’t show you everything.</p>
+</blockquote>
+<p>We stick an autoencoder in the middle of some “given” encoder(-decoder) system, and we’ll try to get our new system to preserve linearity with respect to the (original) inputs.</p>
+<section id="basic-idea-terminology-and-goals" class="level2">
+<h2 class="anchored" data-anchor-id="basic-idea-terminology-and-goals">Basic idea, Terminology, and Goals</h2>
+<p>Basic Idea: Inputs <span class="math inline">\(x\)</span> -&gt; Given Model encodings <span class="math inline">\(y\)</span> -&gt; AA embeddings <span class="math inline">\(z\)</span></p>
+<p>Flowchart: <img src="mixer_flowchart.svg" class="img-fluid" alt="mixer_flowchart.svg"></p>
+<section id="terminology" class="level3">
+<h3 class="anchored" data-anchor-id="terminology">Terminology</h3>
+<ul>
+<li>encoder: The “given” map <span class="math inline">\(f_\theta(x) : x\mapsto y\)</span> is called the “(given) encoder”.</li>
+<li>stem: The inputs <span class="math inline">\(x_i\)</span> are also called “stems”</li>
+<li>given encodings/representations: The encodings <span class="math inline">\(y_i\)</span> are called “(given) representations” or encodings. …sometimes embeddings but we’re going to save that for the <span class="math inline">\(z_i\)</span>.</li>
+<li>mix: A sum of stems is called a “mix”, e.g.&nbsp;mix = <span class="math inline">\(x_1 + x_2\)</span></li>
+<li>faders: Any scalar coefficients applied to stems are called “faders”. So in the mix <span class="math inline">\(a_1 x_1 + a_2 x_2\)</span> for scalar <span class="math inline">\(a_i\)</span>, the <span class="math inline">\(a_i\)</span>’s are faders.</li>
+<li>a-a model: Our new “audio algebra” map <span class="math inline">\(h_\phi(y): y\mapsto z\)</span> is sometimes called the “projector” or “expander” in the literature. We’ll refer to to as the “a-a model”. ;-)</li>
+<li>embeddings: The mapped values <span class="math inline">\(z_i\)</span> are called “embeddings”</li>
+<li>given decoder/inverse: The given encoder <span class="math inline">\(f_\theta\)</span> may or may not have an inverse or “decoder” <span class="math inline">\(f^{-1}\)</span>, but since we’re only interested in systems that can re-synthesize things in the input space (e.g., audio, images, etc), we’ll assume some kind of decoder exists, even if it’s not a true inverse (e.g.&nbsp;maybe it’s some kind of generative model).</li>
+</ul>
+</section>
+<section id="goals" class="level3">
+<h3 class="anchored" data-anchor-id="goals">Goals</h3>
+<p>We want this new “audio algebra” map <span class="math inline">\(h\)</span> to have two properties, which we’ll write as loss functions: 1. <strong>“Mix Loss”</strong>: Our similarity condition will be to make it so “<strong>the embedding of the mix equals the sum of the embeddings</strong>”, that is to say <span class="math display">\[ h(f(x_1 + x_2)) = h(f(x_1) + h(f(x_2) \]</span> i.e. <span class="math display">\[ "zmix = zsum" \]</span> So the mix loss will be</p>
+<p><code>mix_loss</code> = MSE( <code>zmix</code> - <code>zsum</code> ).</p>
+<ol start="2" type="1">
+<li><strong>“(AA) Reconstruction Loss”</strong>: We also want the a-a “projector” model <span class="math inline">\(h_\phi\)</span> to be (approximately) invertible), i.e.&nbsp;we want <span class="math inline">\(h^{-1}(z): z\mapsto y\)</span> to exist. So for both the stems and the mix, we use an MSE loss on the reconstruction of the given representations <span class="math inline">\(y\)</span>. This the aa recon loss will be</li>
+</ol>
+<p><code>aa_recon_loss</code> = MSE ( <code>ymix</code> - <code>y_recon</code> ) + MSE( <code>y_i</code> - <code>y_i_recon</code> ),</p>
+<p>where the “recon” variables are in terms of <span class="math inline">\(h^{-1}\)</span> applied to the z’s, e.g.&nbsp;<code>ymix_recon</code> := <span class="math inline">\(h^{-1}\)</span>(zmix) ).</p>
+</section>
+<section id="challenge-avoiding-collapse" class="level3">
+<h3 class="anchored" data-anchor-id="challenge-avoiding-collapse">Challenge: Avoiding Collapse</h3>
+<p>…the challenge is that the “mix loss” leads to “collapse”: all the points either constrict to the origin, or towards some constant vector. We’ll use the <a href="https://arxiv.org/abs/2105.04906">VICReg</a> method to fix these problems. More on VICReg further below.</p>
+</section>
+<section id="but-this-is-a-toy-model" class="level3">
+<h3 class="anchored" data-anchor-id="but-this-is-a-toy-model">But this is a toy model</h3>
+<p>Instead of real audio, in order to keep things simple and visualize-able, we’ll just work in terms of 2D data points. The real problem we want so solve eventually involves huge numbers of dimensions that we can’t visualize. The hope is to check our work and understanding and gain intuition using this simple “toy model”.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># install a few non-standard dependencies (for colab)</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Note: you may need to restart the kernel to use updated packages.</code></pre>
+</div>
+</div>
+<p>Get/set a few “environment” related variables</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>device <span class="op">=</span> get_device()</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"device = "</span>,device)</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>SCRATCH_DIR <span class="op">=</span> <span class="st">"/scratch"</span> <span class="cf">if</span> os.path.isdir(<span class="st">'/scratch'</span>) <span class="cf">else</span> <span class="st">"/tmp"</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>SCRATCH_DIR <span class="op">+=</span> <span class="st">'/aa'</span>  <span class="co"># give audio alg scratch its own spot</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="kw">not</span> os.path.exists(SCRATCH_DIR):</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>    os.makedirs(SCRATCH_DIR)</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"SCRATCH_DIR ="</span>,SCRATCH_DIR)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>device =  cuda
+SCRATCH_DIR = /tmp/aa</code></pre>
+</div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># generate a unique 2-character code for the run</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>suffix_len <span class="op">=</span> <span class="dv">2</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>RUN_SUFFIX <span class="op">=</span> <span class="st">'_'</span><span class="op">+</span><span class="st">''</span>.join(random.choices(string.ascii_lowercase, k<span class="op">=</span>suffix_len))</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"RUN_SUFFIX ="</span>,RUN_SUFFIX)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>RUN_SUFFIX = _ao</code></pre>
+</div>
+</div>
+</section>
+</section>
+<section id="make-up-some-data" class="level2">
+<h2 class="anchored" data-anchor-id="make-up-some-data">Make up some data</h2>
+<p>For starters, just a bunch of random numbers</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>seed <span class="op">=</span> <span class="dv">5</span>   </span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>torch.manual_seed(seed)</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>batch_size <span class="op">=</span> <span class="dv">1024</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>n_train_points, train_val_split  <span class="op">=</span> batch_size<span class="op">*</span><span class="dv">2000</span>,  <span class="fl">0.8</span> <span class="co"># we're going to grab random data anyway</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>n_points <span class="op">=</span> <span class="bu">int</span>(n_train_points<span class="op">*</span><span class="fl">1.25</span>) </span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>in_dims <span class="op">=</span> <span class="dv">2</span> <span class="co"># number of dimensions the input data will live in, e.g. 2 or 3</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>emb_dims <span class="op">=</span> <span class="dv">2</span> <span class="co"># number of dimensions for embeddings </span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>train_val_split <span class="op">=</span> <span class="fl">0.8</span> </span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>train_len, val_len <span class="op">=</span> <span class="bu">round</span>(n_points<span class="op">*</span>train_val_split), <span class="bu">round</span>(n_points<span class="op">*</span>(<span class="dv">1</span><span class="op">-</span>train_val_split))</span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> RandVecDataset(torchdata.Dataset):</span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a>    <span class="co">"very simple dataset"</span></span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, length, dims):</span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a>        <span class="bu">super</span>().<span class="fu">__init__</span>()</span>
+<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.data <span class="op">=</span> <span class="dv">2</span><span class="op">*</span>torch.rand(length, dims) <span class="op">-</span> <span class="dv">1</span> </span>
+<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__getitem__</span>(<span class="va">self</span>, idx):</span>
+<span id="cb7-19"><a href="#cb7-19" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">self</span>.data[idx]                                               </span>
+<span id="cb7-20"><a href="#cb7-20" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb7-21"><a href="#cb7-21" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__len__</span>(<span class="va">self</span>): </span>
+<span id="cb7-22"><a href="#cb7-22" aria-hidden="true" tabindex="-1"></a>         <span class="cf">return</span> <span class="va">self</span>.data.shape[<span class="dv">0</span>]  </span>
+<span id="cb7-23"><a href="#cb7-23" aria-hidden="true" tabindex="-1"></a>                                                        </span>
+<span id="cb7-24"><a href="#cb7-24" aria-hidden="true" tabindex="-1"></a>train_dataset <span class="op">=</span> RandVecDataset(train_len, in_dims)</span>
+<span id="cb7-25"><a href="#cb7-25" aria-hidden="true" tabindex="-1"></a>val_dataset <span class="op">=</span> RandVecDataset(val_len, in_dims)</span>
+<span id="cb7-26"><a href="#cb7-26" aria-hidden="true" tabindex="-1"></a>v <span class="op">=</span> train_dataset.<span class="fu">__getitem__</span>(<span class="dv">0</span>)</span>
+<span id="cb7-27"><a href="#cb7-27" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(train_dataset.<span class="fu">__len__</span>(), v.shape)</span>
+<span id="cb7-28"><a href="#cb7-28" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(val_dataset.<span class="fu">__len__</span>(), v.shape)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>2048000 torch.Size([2])
+512000 torch.Size([2])</code></pre>
+</div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>train_dl <span class="op">=</span> torchdata.DataLoader(train_dataset, batch_size<span class="op">=</span>batch_size, shuffle<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>val_dl <span class="op">=</span> torchdata.DataLoader(val_dataset, batch_size<span class="op">=</span>batch_size, shuffle<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>val_iter <span class="op">=</span> <span class="bu">iter</span>(val_dl)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<p><strong>DEMO BATCH</strong>: Vizualization demo batch (same each time)</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="co"># plot what the demo batch looks like in input space -- you're going to be seeing this alot!</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>fig, ax <span class="op">=</span> plt.subplots(<span class="dv">1</span>,<span class="dv">3</span>, figsize<span class="op">=</span>(<span class="dv">12</span>,<span class="dv">4</span>))</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>demo_batch <span class="op">=</span> get_demo_batch(val_iter, debug<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>ax[<span class="dv">0</span>].plot(demo_batch[:,<span class="dv">0</span>], demo_batch[:,<span class="dv">1</span>], marker<span class="op">=</span><span class="st">'.'</span>, linestyle<span class="op">=</span><span class="st">'None'</span>)</span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>ax[<span class="dv">0</span>].set_title(<span class="st">'single "lines+dots" stem'</span>)</span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">""</span>)</span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>demo_mix <span class="op">=</span> demo_batch <span class="op">+</span> get_demo_batch(val_iter, demo_line<span class="op">=</span><span class="va">True</span>, debug<span class="op">=</span><span class="va">True</span>) <span class="co"># add another 'line stem'</span></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>ax[<span class="dv">1</span>].plot(demo_mix[:,<span class="dv">0</span>], demo_mix[:,<span class="dv">1</span>], marker<span class="op">=</span><span class="st">'.'</span>, linestyle<span class="op">=</span><span class="st">'None'</span>)</span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a>ax[<span class="dv">1</span>].set_title(<span class="st">'mix of two "lines+dots" stems'</span>)</span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a>demo_mix <span class="op">=</span> demo_batch <span class="op">+</span> get_demo_batch(val_iter, demo_line<span class="op">=</span><span class="va">False</span>, debug<span class="op">=</span><span class="va">True</span>) <span class="co"># random noise will swamp lines</span></span>
+<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a>ax[<span class="dv">2</span>].plot(demo_mix[:,<span class="dv">0</span>], demo_mix[:,<span class="dv">1</span>], marker<span class="op">=</span><span class="st">'.'</span>, linestyle<span class="op">=</span><span class="st">'None'</span>)</span>
+<span id="cb10-15"><a href="#cb10-15" aria-hidden="true" tabindex="-1"></a>ax[<span class="dv">2</span>].set_title(<span class="st">'mix of "lines+dots" + unit noise'</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code></code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>Text(0.5, 1.0, 'mix of "lines+dots" + unit noise')</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="aa-mixer-toy_files/figure-html/cell-8-output-3.png" class="img-fluid"></p>
+</div>
+</div>
+<p>…so in general our mix of random numbers – even if one of the stems has a nice pattern – will just be a bunch of random numbers.</p>
+<p>We’ll use the far right for “demo_mix” since that’s what it’ll typically look like, whereas the middle graph is contrived.</p>
+</section>
+<section id="generic-building-blocks" class="level2">
+<h2 class="anchored" data-anchor-id="generic-building-blocks">Generic Building Blocks</h2>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="co"># test that</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>emb_test <span class="op">=</span> EmbedBlock(<span class="dv">2</span>, <span class="dv">2</span>, use_bn<span class="op">=</span><span class="va">True</span>, requires_grad<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="co">#res_test = ResBlock(2, 2)</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="the-given-autoencoder-f_thetax-x-mapsto-y" class="level2">
+<h2 class="anchored" data-anchor-id="the-given-autoencoder-f_thetax-x-mapsto-y">The Given (Auto)Encoder: <span class="math inline">\(f_\theta(x): x \mapsto y\)</span></h2>
+<p>This is a stand-in for whatever the main encoder is to be, i.e.&nbsp;for which the audio-algebra is going be inserted in the middle of.<br>
+This could be an actual audio encoder or,…just something random.</p>
+<p>Now, for word embeddings these are typically just weights from a linear transformation, but we’re going to assume that there’s maybe some set of nonlinear tranformations that led us to this point. I made up a twisty nonlinear model for the toy model to use.</p>
+<p>Oh, first I’m going to define a couple nonlinearities that might be used in the model.</p>
+<p>…and we’ll just quickly visualize them.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb14"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>x <span class="op">=</span> torch.linspace(<span class="op">-</span><span class="fl">2.5</span>,<span class="fl">2.5</span>,<span class="dv">500</span>)</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>fig, ax <span class="op">=</span> plt.subplots(figsize<span class="op">=</span>(<span class="dv">9</span>,<span class="dv">4</span>))</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>ax.plot(x.cpu().numpy(), torch.tanh(<span class="dv">3</span><span class="op">*</span>x).cpu().numpy(), label<span class="op">=</span><span class="st">'tanh'</span>)</span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>ax.plot(x.cpu().numpy(), friendly_tanh(x,a<span class="op">=</span><span class="dv">3</span>).cpu().numpy(), label<span class="op">=</span><span class="st">'friendly_tanh'</span>)</span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>ax.plot(x.cpu().numpy(), compressor(x).cpu().numpy(), label<span class="op">=</span><span class="st">'"compressor"'</span>)</span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>ax.legend()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-display">
+<pre><code>&lt;matplotlib.legend.Legend&gt;</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="aa-mixer-toy_files/figure-html/cell-13-output-2.png" class="img-fluid"></p>
+</div>
+</div>
+</section>
+<section id="visualize-effects-of-given_model.encode-on-inputs" class="level2">
+<h2 class="anchored" data-anchor-id="visualize-effects-of-given_model.encode-on-inputs">Visualize Effects of <code>given_model.encode</code> on Inputs</h2>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>torch.manual_seed(seed)</span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="co">#given_model = SimpleAutoEncoder(in_dims=in_dims, emb_dims=emb_dims).to(device)</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>given_model <span class="op">=</span> TwistAndScrunch()</span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>given_model <span class="op">=</span> given_model.to(device)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb17"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"for single stem:"</span>)</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>viz_given_batch(demo_batch, given_model, debug<span class="op">=</span><span class="va">True</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>for single stem:
+absmax of val_batch =  0.9996815919876099
+absmax of emb_batch =  1.141883134841919</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="aa-mixer-toy_files/figure-html/cell-17-output-2.png" class="img-fluid"></p>
+</div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb19"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Also operate on the demo mix:"</span>)</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>viz_given_batch(demo_mix, given_model, debug<span class="op">=</span><span class="va">True</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Also operate on the demo mix:
+absmax of val_batch =  1.9301079511642456
+absmax of emb_batch =  1.2925496101379395</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="aa-mixer-toy_files/figure-html/cell-18-output-2.png" class="img-fluid"></p>
+</div>
+</div>
+</section>
+<section id="the-aa-mixer-projector-model-h_phiy-y-mapsto-z" class="level1">
+<h1>The AA-mixer “Projector” model: <span class="math inline">\(h_\phi(y): y \mapsto z\)</span></h1>
+<p>this is the model that we want to train</p>
+<section id="get_stems_faders" class="level3">
+<h3 class="anchored" data-anchor-id="get_stems_faders">get_stems_faders:</h3>
+<p>really this is more of a <code>dataloader</code> utility but for now its being called from the main loop because it involves less change to the dataloader. ;-)</p>
+<p>Code to to do the encoding of stems and faders into zmix and zsum</p>
+<ul>
+<li>zmix = embedding of the mix (mix = sum of inputs in input space)</li>
+<li>zsum = mix of the embeddings (in embedding space</li>
+</ul>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb21"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> do_mixing(stems, faders, given_model, aa_model, device, debug<span class="op">=</span><span class="va">False</span>, <span class="op">**</span>kwargs):</span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""</span></span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a><span class="co">    here we actually encode inputs.</span></span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a><span class="co">    0's denote values in the given model space, non-0's denode those in our aa_model</span></span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a><span class="co">    e.g., "y" denotes an embedding from the frozen encoder, "z" denotes re-mapped embeddings</span></span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a><span class="co">    """</span></span>
+<span id="cb21-8"><a href="#cb21-8" aria-hidden="true" tabindex="-1"></a>    zs, ys, zsum, ysum, yrecon_sum, fadedstems <span class="op">=</span> [], [], <span class="va">None</span>, <span class="va">None</span>, <span class="va">None</span>, []</span>
+<span id="cb21-9"><a href="#cb21-9" aria-hidden="true" tabindex="-1"></a>    mix <span class="op">=</span> torch.zeros_like(stems[<span class="dv">0</span>]).to(device)</span>
+<span id="cb21-10"><a href="#cb21-10" aria-hidden="true" tabindex="-1"></a>    <span class="co">#if debug: print("do_mixing: stems, faders =",stems, faders)</span></span>
+<span id="cb21-11"><a href="#cb21-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> s, f <span class="kw">in</span> <span class="bu">zip</span>(stems, faders):   <span class="co"># iterate through list of stems, encode a bunch of stems at different fader settings</span></span>
+<span id="cb21-12"><a href="#cb21-12" aria-hidden="true" tabindex="-1"></a>        fadedstem <span class="op">=</span> (s <span class="op">*</span> f).to(device)                 <span class="co"># audio stem adjusted by gain fader f</span></span>
+<span id="cb21-13"><a href="#cb21-13" aria-hidden="true" tabindex="-1"></a>        <span class="cf">with</span> torch.no_grad():</span>
+<span id="cb21-14"><a href="#cb21-14" aria-hidden="true" tabindex="-1"></a>            y <span class="op">=</span> given_model.encode(fadedstem)  <span class="co"># encode the stem</span></span>
+<span id="cb21-15"><a href="#cb21-15" aria-hidden="true" tabindex="-1"></a>        z, y_recon <span class="op">=</span> aa_model(y)             <span class="co"># &lt;-- this is the main work of the model</span></span>
+<span id="cb21-16"><a href="#cb21-16" aria-hidden="true" tabindex="-1"></a>        zsum <span class="op">=</span> z <span class="cf">if</span> zsum <span class="kw">is</span> <span class="va">None</span> <span class="cf">else</span> zsum <span class="op">+</span> z <span class="co"># &lt;---- compute the sum of all the z's so far. we'll end up using this in our (metric) loss as "pred"</span></span>
+<span id="cb21-17"><a href="#cb21-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-18"><a href="#cb21-18" aria-hidden="true" tabindex="-1"></a>        mix <span class="op">+=</span> fadedstem                 <span class="co"># make full mix in input space</span></span>
+<span id="cb21-19"><a href="#cb21-19" aria-hidden="true" tabindex="-1"></a>        <span class="cf">with</span> torch.no_grad():</span>
+<span id="cb21-20"><a href="#cb21-20" aria-hidden="true" tabindex="-1"></a>            ymix <span class="op">=</span> given_model.encode(mix)  <span class="co"># encode the mix in the given model</span></span>
+<span id="cb21-21"><a href="#cb21-21" aria-hidden="true" tabindex="-1"></a>        zmix, ymix_recon <span class="op">=</span> aa_model(ymix)   <span class="co">#  &lt;----- map that according to our learned re-embedding. this will be the "target" in the metric loss</span></span>
+<span id="cb21-22"><a href="#cb21-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-23"><a href="#cb21-23" aria-hidden="true" tabindex="-1"></a>        <span class="co"># for diagnostics:</span></span>
+<span id="cb21-24"><a href="#cb21-24" aria-hidden="true" tabindex="-1"></a>        ysum <span class="op">=</span> y <span class="cf">if</span> ysum <span class="kw">is</span> <span class="va">None</span> <span class="cf">else</span> ysum <span class="op">+</span> y   <span class="co"># = sum of embeddings in original model space; we don't really care about ysum except for diagnostics</span></span>
+<span id="cb21-25"><a href="#cb21-25" aria-hidden="true" tabindex="-1"></a>        yrecon_sum <span class="op">=</span> y_recon <span class="cf">if</span> yrecon_sum <span class="kw">is</span> <span class="va">None</span> <span class="cf">else</span> yrecon_sum <span class="op">+</span> y_recon   <span class="co"># = sum of embeddings in original model space; we don't really care about ysum except for diagnostics</span></span>
+<span id="cb21-26"><a href="#cb21-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-27"><a href="#cb21-27" aria-hidden="true" tabindex="-1"></a>        zs.append(z)              <span class="co"># save a list of individual z's</span></span>
+<span id="cb21-28"><a href="#cb21-28" aria-hidden="true" tabindex="-1"></a>        ys.append(y)            <span class="co"># save a list of individual y's</span></span>
+<span id="cb21-29"><a href="#cb21-29" aria-hidden="true" tabindex="-1"></a>        fadedstems.append(fadedstem) <span class="co"># safe a list of each thing that went into the mix</span></span>
+<span id="cb21-30"><a href="#cb21-30" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb21-31"><a href="#cb21-31" aria-hidden="true" tabindex="-1"></a>    archive <span class="op">=</span> {<span class="st">'zs'</span>:zs, <span class="st">'mix'</span>:mix, <span class="st">'znegsum'</span>:<span class="va">None</span>, <span class="st">'ys'</span>: ys, <span class="st">'ysum'</span>:ysum, <span class="st">'ymix'</span>:ymix, <span class="st">'ymix_recon'</span>:ymix_recon, <span class="st">'yrecon_sum'</span>:yrecon_sum, <span class="st">'fadedstems'</span>:fadedstems} <span class="co"># more info for diagnostics</span></span>
+<span id="cb21-32"><a href="#cb21-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-33"><a href="#cb21-33" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> zsum, zmix, archive  <span class="co"># we will try to get these two to be close to each other via loss. archive is for diagnostics</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="instantiate-the-model" class="level3">
+<h3 class="anchored" data-anchor-id="instantiate-the-model">Instantiate the model</h3>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb22"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>aa_use_bn <span class="op">=</span> <span class="va">False</span>  <span class="co"># batch norm? </span></span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>aa_use_resid <span class="op">=</span> <span class="va">True</span> <span class="co"># use residual connections? (doesn't make much difference tbh)</span></span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a>hidden_dims <span class="op">=</span> <span class="dv">64</span>   <span class="co"># number of hidden dimensions in aa model. usually was 64</span></span>
+<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a>torch.manual_seed(seed) <span class="co"># chose this value because it shows of nice nonlinearity</span></span>
+<span id="cb22-6"><a href="#cb22-6" aria-hidden="true" tabindex="-1"></a>aa_model <span class="op">=</span> AudioAlgebra(dims<span class="op">=</span>emb_dims, hidden_dims<span class="op">=</span>hidden_dims, use_bn<span class="op">=</span>aa_use_bn, resid<span class="op">=</span>aa_use_resid).to(device)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<p>…and visualize its effects</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb23"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="co"># test the viz</span></span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>torch.manual_seed(seed)</span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a>demo_stems, demo_faders, val_iter <span class="op">=</span> get_stems_faders(demo_batch, val_iter, val_dataset, debug<span class="op">=</span><span class="va">True</span>, unity_gain<span class="op">=</span><span class="va">False</span>, maxstems<span class="op">=</span><span class="dv">2</span>)</span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"demo_faders = "</span>,demo_faders)</span>
+<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"calling do_mixing..."</span>)</span>
+<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a>demo_zsum, demo_zmix, demo_archive <span class="op">=</span> do_mixing(demo_stems, demo_faders, given_model, aa_model, device, debug<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-8"><a href="#cb23-8" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"calling viz_aa_batch..."</span>)</span>
+<span id="cb23-9"><a href="#cb23-9" aria-hidden="true" tabindex="-1"></a>im <span class="op">=</span> viz_aa_demo(demo_zsum, demo_zmix, demo_archive, aa_model, debug<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb23-10"><a href="#cb23-10" aria-hidden="true" tabindex="-1"></a>im</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>maxstems, nstems = 2 2
+  next_stem.shape =  torch.Size([1024, 2])
+demo_faders =  tensor([ 1.4630, -0.5718])
+calling do_mixing...
+calling viz_aa_batch...</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="aa-mixer-toy_files/figure-html/cell-25-output-2.png" class="img-fluid"></p>
+</div>
+</div>
+<p>The fact that zsum and zmix (bottom right) are not the same is the problem that our aa-mixer model will try to put right.</p>
+<p>Define some losses</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb25"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a>mseloss <span class="op">=</span> nn.MSELoss()</span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> rel_loss(y_pred: torch.Tensor, y: torch.Tensor, eps<span class="op">=</span><span class="fl">1e-3</span>) <span class="op">-&gt;</span> <span class="bu">float</span>:</span>
+<span id="cb25-4"><a href="#cb25-4" aria-hidden="true" tabindex="-1"></a>    <span class="co">"relative error loss   --- note we're never going to actually use this. it was just part of development"</span></span>
+<span id="cb25-5"><a href="#cb25-5" aria-hidden="true" tabindex="-1"></a>    e <span class="op">=</span> torch.<span class="bu">abs</span>(y.view_as(y_pred) <span class="op">-</span> y_pred) <span class="op">/</span> ( torch.<span class="bu">abs</span>(y.view_as(y_pred)) <span class="op">+</span> eps ) </span>
+<span id="cb25-6"><a href="#cb25-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> torch.median(e)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<p>We could try to train the model now, but the representations would collapse, either toward the origin or toward a line.</p>
+</section>
+</section>
+<section id="avoiding-collapse-vicreg" class="level1">
+<h1>Avoiding Collapse: VICReg</h1>
+<p>Avoiding collapse has been some of the primary outputs of the Meta AI (Yann LeCun et al)’s work on Self-Supervised Learning (SSL) of representations. Mostly they’re interested in classification of images, but we will try to adapt this to our purposes. A few notable papers, in chronological and topical order:</p>
+<ul>
+<li>BYOL (Grill et al, 2020). I wrote about this in <a href="https://drscotthawley.github.io/blog_quarto/posts/2022-11-17-byol.html">my blog</a>. BYOL is fine but typically regarded as being more geared toward classification rather than regression.</li>
+<li>VICReg (Bardes et al, 2022) <a href="https://arxiv.org/pdf/2105.04906.pdf">PDF</a> introduces “variance-invariance-covariance regularization. This is what we’ll follow here.<br>
+</li>
+<li>VCReg (Mialon et al, 2022) <a href="https://arxiv.org/pdf/2209.14905.pdf">PDF</a> is about gaining an understanding of why the “projector”(/“expander”) network is useful (rather than the mere observation that is <em>is</em>.</li>
+</ul>
+<p>The VICReg paper’s architecture diagram and figure caption is as follows: <img src="https://github.com/facebookresearch/vicreg/raw/main/.github/vicreg_archi_full.jpg" class="img-fluid" alt="vicreg_diagram"> &gt; “Figure 1: <strong>VICReg: joint embedding architecture with variance, invariance and covariance regularization.</strong> Given a batch of images <span class="math inline">\(I\)</span>, two batches of different views <span class="math inline">\(X\)</span> and <span class="math inline">\(X'\)</span> are produced and are then encoded into representations <span class="math inline">\(Y\)</span> and <span class="math inline">\(Y'\)</span>. The representations are fed to an expander producing the embeddings <span class="math inline">\(Z\)</span> and <span class="math inline">\(Z'\)</span>. The distance between two embeddings from the same image is minimized, the variance of each embedding variable over a batch is maintained above a threshold, and the covariance between pairs of embedding variables over a batch are attracted to zero, decorrelating the variables from each other. Although the two branches do not require identical architectures nor share weights, in most of our experiments, they are Siamese with shared weights: the encoders are ResNet-50 backbones with output dimension 2048. The expanders have 3 fully-connected layers of size 8192.” – Bardes et al</p>
+<p>…Note that we’re going to be using this scheme a little differently than the original authors intended:</p>
+<p>Instead of sending augments of crops of image down the lower “path” of the above diagram, we’re going to send the mix to get <span class="math inline">\(zmix\)</span>! And along the top path, we’re going to send multiple stems independently <span class="math inline">\(x_i \mapsto z_i\)</span>, and then sum these up to get <span class="math inline">\(zsum := \sum_i z_i\)</span> before comparing that against <span class="math inline">\(z_{mix}\)</span>. So our similarity function will have the form <span class="math inline">\(s( zmix, zsum )\)</span> instead of <span class="math inline">\(s(Z, Z')\)</span> shown in the digram above.</p>
+<p>Our diagram looks like this: <img src="mixer_flowchart.svg" class="img-fluid" alt="mixer_flowchart.svg"></p>
+<p>…and the “augmentation” or “views” will take the form of us just grabbing random pairs of stems over &amp; over.</p>
+<p>As explained in the “VICReg: Intuition” section of the paper:</p>
+<blockquote class="blockquote">
+<p>“The basic idea is to use a loss function with three terms: 1. <strong>Invariance</strong>: the mean square distance between the embedding vectors. 2. <strong>Variance</strong>: a hinge loss to maintain the standard deviation (over a batch) of each variable of the embedding above a given threshold. This term forces the embedding vectors of samples within a batch to be different. 3. <strong>Covariance</strong>: a term that attracts the covariances (over a batch) between every pair of (centered) embedding variables towards zero. This term decorrelates the variables of each embedding and prevents an informational collapse in which the variables would vary together or be highly correlated.”</p>
+</blockquote>
+<section id="invariance" class="level3">
+<h3 class="anchored" data-anchor-id="invariance">1. Invariance</h3>
+<p>The <strong>invariance</strong> part is easy. But that’s what leads to collapse.</p>
+</section>
+<section id="variance" class="level3">
+<h3 class="anchored" data-anchor-id="variance">2. Variance</h3>
+<p>The <strong>variance</strong> part is about using a hinge loss on some scale <span class="math inline">\(\gamma\)</span> (“fixed to <span class="math inline">\(1\)</span> in our experiments”) minus the standard deviation <span class="math inline">\(S\)</span> across each dimension <span class="math inline">\(j\)</span> (for <span class="math inline">\(d\)</span> dimensions) within the batch <span class="math inline">\(Z\)</span>:</p>
+<p><span class="math display">\[    v(Z) = \frac{1}{d} \sum_{j=1}^{d} \max(0, \gamma - S(z^{j}, \epsilon))   \]</span> where <span class="math inline">\(z^j\)</span> denotes “the vector composed of each value at dimension <span class="math inline">\(j\)</span> in all vectors in <span class="math inline">\(Z\)</span>,” and <span class="math inline">\(\epsilon\)</span> is some small constant to prevent numerical instability, i.e.:</p>
+<p><span class="math display">\[     S(x, \epsilon) = \sqrt{\mathrm{Var}(x) + \epsilon} \]</span></p>
+<p>In other words, they’re trying to make sure the variance doesn’t get any smaller than <span class="math inline">\(\gamma\)</span> (but larger than <span class="math inline">\(\gamma\)</span> is fine).</p>
+<p>Note: The authors say, “Using the standard deviation and not directly the variance is crucial.”</p>
+</section>
+<section id="covariance" class="level3">
+<h3 class="anchored" data-anchor-id="covariance">3. Covariance</h3>
+<p>What about the <strong>covariance</strong> term? This is another way to prevent collapse. While the invariance can prevent collapse toward zero, the covariance can prevent collapse to a constant vector. This part I did not have! Or at least didn’t have it right. For the covariance, we need a notion of “what should be different” – easy! We’ll just use other elements within the same batch!</p>
+<p>Let’s adapt the <a href="https://github.com/facebookresearch/vicreg/blob/4e12602fd495af83efd1631fbe82523e6db092e0/main_vicreg.py#LL209-L213C69">VICReg code</a>:</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb26"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a>start_from_pretrained <span class="op">=</span> <span class="va">False</span></span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>result <span class="op">=</span> <span class="st">"Starting from scratch."</span> </span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> start_from_pretrained:</span>
+<span id="cb26-4"><a href="#cb26-4" aria-hidden="true" tabindex="-1"></a>    aa_load <span class="op">=</span> load_aa_checkpoint(emb_dims<span class="op">=</span>emb_dims, device<span class="op">=</span>device)</span>
+<span id="cb26-5"><a href="#cb26-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> aa_load <span class="kw">is</span> <span class="kw">not</span> <span class="va">None</span>:</span>
+<span id="cb26-6"><a href="#cb26-6" aria-hidden="true" tabindex="-1"></a>        aa_model <span class="op">=</span> aa_load</span>
+<span id="cb26-7"><a href="#cb26-7" aria-hidden="true" tabindex="-1"></a>        <span class="co"># re-viz showing loaded model</span></span>
+<span id="cb26-8"><a href="#cb26-8" aria-hidden="true" tabindex="-1"></a>        demo_zsum, demo_zmix, demo_archive <span class="op">=</span> do_mixing(demo_stems, demo_faders, given_model, aa_model, device, debug<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb26-9"><a href="#cb26-9" aria-hidden="true" tabindex="-1"></a>        result <span class="op">=</span> viz_aa_demo(demo_zsum, demo_zmix, demo_archive, aa_model<span class="op">=</span>aa_model)</span>
+<span id="cb26-10"><a href="#cb26-10" aria-hidden="true" tabindex="-1"></a>        <span class="bu">print</span>(<span class="st">"Successfully loaded checkpoint"</span>)</span>
+<span id="cb26-11"><a href="#cb26-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-12"><a href="#cb26-12" aria-hidden="true" tabindex="-1"></a>result</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-display">
+<pre><code>'Starting from scratch.'</code></pre>
+</div>
+</div>
+</section>
+<section id="train-aa_model-with-vicreg" class="level2">
+<h2 class="anchored" data-anchor-id="train-aa_model-with-vicreg">Train <code>aa_model</code> with VICReg</h2>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb28"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a>wandb.login()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Failed to detect the name of this notebook, you can set it manually with the WANDB_NOTEBOOK_NAME environment variable to enable code saving.
+wandb: Logging into wandb.ai. (Learn how to deploy a W&amp;B server locally: https://wandb.me/wandb-server)
+wandb: You can find your API key in your browser here: https://wandb.ai/authorize
+wandb: Paste an API key from your profile and hit enter, or press ctrl+c to quit:</code></pre>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code> ········</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>wandb: Appending key for api.wandb.ai to your netrc file: /home/ec2-user/.netrc</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>True</code></pre>
+</div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb33"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> train_new_aa:</span>
+<span id="cb33-2"><a href="#cb33-2" aria-hidden="true" tabindex="-1"></a>    train_aa_vicreg()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>wandb: Currently logged in as: drscotthawley. Use `wandb login --relogin` to force relogin</code></pre>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>total_steps = 80000</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+Tracking run with wandb version 0.13.7
+</div>
+<div class="cell-output cell-output-display">
+Run data is saved locally in <code>/home/ec2-user/SageMaker/audio-algebra/wandb/run-20230104_095749-2khoulne</code>
+</div>
+<div class="cell-output cell-output-display">
+Syncing run <strong><a href="https://wandb.ai/drscotthawley/aa-toy-vicreg/runs/2khoulne" target="_blank">likely-sea-52</a></strong> to <a href="https://wandb.ai/drscotthawley/aa-toy-vicreg" target="_blank">Weights &amp; Biases</a> (<a href="https://wandb.me/run" target="_blank">docs</a>)<br>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>wandb: WARNING Calling wandb.run.save without any arguments is deprecated.Changes to attributes are automatically persisted.</code></pre>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>New run name = h64_bs1024_lr0.002_ao</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"2169fa2ea4674135bf4d73c245634890","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"1be5c42a47984742a610c3e6967bc91c","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"8ba72d1f2f694953b0213276023c68dd","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"71635a69c5f64cd891bc13b39d41ff36","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"644496142cac485e8b8ffd8a58cc7328","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"ea1adb80d18449a7930a6853a622af70","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"433e37a936d94f89bdc65c54af7ab212","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"2bab0bdaf73e4caa96662c891312a753","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"49afa16032dd4d538f958bbd9e6f4652","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"4dff42523a5545b5a1aa76dd204bf0b3","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"d76f906d68a84bc8ad95093359b5a445","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"6609f0ebd437443cb671657df21090f4","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"60cbdce62fdc4a0e9c06de06614b7d87","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"861453e454dc44cbba20bb1e984b9253","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"6608f45bebe94453af89ce1be741d71b","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"426d7a67cfdf481fb96d6fa2d76e8624","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"338e6a7677044e07ba8947204dbc2134","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"32f4e0d923aa444287b6594f1ca3fb39","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"3ab7ba62b5d54fd39713c5b7f7c24435","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"e0d82b368f234460b846fd44110de252","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"1c802d393d6347a487a3dde34f112015","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"361dc9e2b05c4d0bbe6dbcbb92987340","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"f1e2877b01b8471fa795158c7280fb24","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"24849f1704354329adc53143238374e8","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"1727727c96114843af20731613ff4430","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"f039ee49b8d249059907d130597332bd","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"fb66d903f14f41129c27a67db5003743","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"9fef51cbeb4b41d38dc2328ceca24ffe","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"9cc7ceb4693c45379150986b6eb6543d","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"0b7d77d8de8840e8bf6a4bc06c1775c3","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"51a61df1cb644d919a8019cd29b58b44","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"8c2af068369c4cb1bac41f2072e6dfac","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"fb31a483de2b403f837e50faca7cc094","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"1c591779d8ee401bb78d443fd4d27869","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"1996c310422044f8a5677c0011b135b9","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"5adb4a60210146d8958683868daa95e3","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"7548a290509d4160b6104ab05991702a","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"207a154d72b742f6b7d7bc46a80d617a","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"b847ed3e3f1c44a5ab63fda6bfe042c9","version_major":2,"version_minor":0}
+</script>
+</div>
+<div class="cell-output cell-output-display">
+<script type="application/vnd.jupyter.widget-view+json">
+{"model_id":"64f52de7914f44aa8b6e44ec06d962f4","version_major":2,"version_minor":0}
+</script>
+</div>
+</div>
+<p>Let’s see how we did…</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb38"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a>torch.manual_seed(seed)</span>
+<span id="cb38-2"><a href="#cb38-2" aria-hidden="true" tabindex="-1"></a>demo_stems, demo_faders, val_iter <span class="op">=</span> get_stems_faders(demo_batch, val_iter, val_dataset, maxstems<span class="op">=</span><span class="dv">2</span>)</span>
+<span id="cb38-3"><a href="#cb38-3" aria-hidden="true" tabindex="-1"></a>demo_zsum, demo_zmix, demo_archive <span class="op">=</span> do_mixing(demo_stems, demo_faders, given_model, aa_model, device)</span>
+<span id="cb38-4"><a href="#cb38-4" aria-hidden="true" tabindex="-1"></a>viz_aa_demo(demo_zsum, demo_zmix, demo_archive, aa_model)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-display">
+<p><img src="aa-mixer-toy_files/figure-html/cell-37-output-1.png" class="img-fluid"></p>
+</div>
+</div>
+<p>^^ If the green markers in the bottom right and bottom middle panels are covered up, then we’re good!</p>
+<p>BTW, if you want to make a movie of those images over the course of training, see the <a href="https://wandb.ai/_scott/gif-maker/reports/Create-gifs-from-images-logged-to-W-B---VmlldzoyMTI4ODEz">instructions by Scott Condon of Weights and Biases</a>, except you should use <a href="https://colab.research.google.com/drive/1NhwkBAgVF0qmWQrjtSTvqv9KMdV3IM-5?usp=sharing">this here Colab link to my modification</a> of his code. Here’s a movie I made:</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb39"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> IPython.display <span class="im">import</span> Video  </span>
+<span id="cb39-2"><a href="#cb39-2" aria-hidden="true" tabindex="-1"></a>video_url <span class="op">=</span> <span class="st">"https://hedges.belmont.edu/aa_1280.mp4"</span></span>
+<span id="cb39-3"><a href="#cb39-3" aria-hidden="true" tabindex="-1"></a>Video(video_url, width<span class="op">=</span><span class="dv">720</span>)</span>
+<span id="cb39-4"><a href="#cb39-4" aria-hidden="true" tabindex="-1"></a><span class="co"># </span><span class="al">NOTE</span><span class="co"> that GitHub won't display this video; you have to execute the above code</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-display">
+<video src="https://hedges.belmont.edu/aa_1280.mp4" controls="" width="720">
+      Your browser does not support the <code>video</code> element.
+    </video>
+</div>
+</div>
+<hr>
+</section>
+</section>
+<section id="do-cool-stuff-with-trained-aa_model-requires-decoder-for-given_model" class="level1">
+<h1>Do Cool Stuff with trained <code>aa_model</code> (requires Decoder for <code>given_model</code>)</h1>
+<p>The next part involves mapping to back to input space, so you need a trained decoder for the given model <span class="math inline">\(f(x): x\mapsto y\)</span>.</p>
+<p>i.e.&nbsp;we’re going to be doing a lot of <span class="math inline">\(z := h(f(x))\)</span>, and $x := f<sup>{-1}(h</sup>{-1}(z) $.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb40"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a><span class="co"># try to load a checkpoint for the given model</span></span>
+<span id="cb40-2"><a href="#cb40-2" aria-hidden="true" tabindex="-1"></a>given_path <span class="op">=</span> <span class="st">'given_model.pth'</span></span>
+<span id="cb40-3"><a href="#cb40-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb40-4"><a href="#cb40-4" aria-hidden="true" tabindex="-1"></a>train_given_model <span class="op">=</span> <span class="va">True</span></span>
+<span id="cb40-5"><a href="#cb40-5" aria-hidden="true" tabindex="-1"></a><span class="cf">try</span>: </span>
+<span id="cb40-6"><a href="#cb40-6" aria-hidden="true" tabindex="-1"></a>    given_model <span class="op">=</span> TwistAndScrunch() <span class="co"># GivenAutoEncoder(in_dims=in_dims, act=act, emb_dims=emb_dims)</span></span>
+<span id="cb40-7"><a href="#cb40-7" aria-hidden="true" tabindex="-1"></a>    given_model.load_state_dict(torch.load(given_path))</span>
+<span id="cb40-8"><a href="#cb40-8" aria-hidden="true" tabindex="-1"></a>    given_model.to(device)</span>
+<span id="cb40-9"><a href="#cb40-9" aria-hidden="true" tabindex="-1"></a>    given_model.<span class="bu">eval</span>()</span>
+<span id="cb40-10"><a href="#cb40-10" aria-hidden="true" tabindex="-1"></a>    train_given_model <span class="op">=</span> <span class="va">False</span></span>
+<span id="cb40-11"><a href="#cb40-11" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">"Loaded trained given_model just fine.  Proceed."</span>)</span>
+<span id="cb40-12"><a href="#cb40-12" aria-hidden="true" tabindex="-1"></a><span class="cf">except</span> <span class="pp">Exception</span> <span class="im">as</span> e:</span>
+<span id="cb40-13"><a href="#cb40-13" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="ss">f"</span><span class="sc">{</span>e<span class="sc">}</span><span class="ss">:</span><span class="ch">\n</span><span class="ss">Failed to load given model checkpoint. You'll need to (re)train the decoder."</span>)</span>
+<span id="cb40-14"><a href="#cb40-14" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb40-15"><a href="#cb40-15" aria-hidden="true" tabindex="-1"></a>given_model.to(device)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Loaded trained given_model just fine.  Proceed.</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<pre><code>TwistAndScrunch(
+  (decoder): Sequential(
+    (0): EmbedBlock(
+      (act): GELU()
+      (lin): Linear(in_features=2, out_features=32, bias=True)
+    )
+    (1): EmbedBlock(
+      (act): GELU()
+      (lin): Linear(in_features=32, out_features=32, bias=True)
+    )
+    (2): Linear(in_features=32, out_features=2, bias=True)
+  )
+  (encoder): Sequential(
+    (0): EmbedBlock(
+      (act): GELU()
+      (lin): Linear(in_features=2, out_features=32, bias=True)
+    )
+    (1): EmbedBlock(
+      (act): GELU()
+      (lin): Linear(in_features=32, out_features=32, bias=True)
+    )
+    (2): Linear(in_features=32, out_features=2, bias=True)
+  )
+)</code></pre>
+</div>
+</div>
+<section id="optional-train-the-decoder-of-the-given-autoencoder-i.e-f-1y-y-mapsto-x" class="level3">
+<h3 class="anchored" data-anchor-id="optional-train-the-decoder-of-the-given-autoencoder-i.e-f-1y-y-mapsto-x">(Optional) Train the [Decoder of the] Given (Auto)Encoder, i.e <span class="math inline">\(f^{-1}(y): y \mapsto x\)</span></h3>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb43"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> train_given_model: </span>
+<span id="cb43-2"><a href="#cb43-2" aria-hidden="true" tabindex="-1"></a>    opt_given <span class="op">=</span> optim.Adam(given_model.parameters(), lr<span class="op">=</span><span class="fl">5e-4</span>)</span>
+<span id="cb43-3"><a href="#cb43-3" aria-hidden="true" tabindex="-1"></a>    <span class="co">#scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt_given, 'min', factor=0.3, verbose=True)</span></span>
+<span id="cb43-4"><a href="#cb43-4" aria-hidden="true" tabindex="-1"></a>    mseloss <span class="op">=</span> nn.MSELoss()</span>
+<span id="cb43-5"><a href="#cb43-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb43-6"><a href="#cb43-6" aria-hidden="true" tabindex="-1"></a>    wandb.finish()</span>
+<span id="cb43-7"><a href="#cb43-7" aria-hidden="true" tabindex="-1"></a>    wandb.init(project<span class="op">=</span><span class="st">'aa-toy-given'</span>)</span>
+<span id="cb43-8"><a href="#cb43-8" aria-hidden="true" tabindex="-1"></a>    epoch, step, max_epochs <span class="op">=</span> <span class="dv">0</span>, <span class="dv">0</span>, <span class="dv">20</span></span>
+<span id="cb43-9"><a href="#cb43-9" aria-hidden="true" tabindex="-1"></a>    lossinfo_every, demo_every <span class="op">=</span>   <span class="dv">20</span>, <span class="dv">1000</span>   <span class="co"># in unites of steps</span></span>
+<span id="cb43-10"><a href="#cb43-10" aria-hidden="true" tabindex="-1"></a>    freeze_enc_at <span class="op">=</span> <span class="dv">65</span>  <span class="co"># if we don't freeze the encoder early on, then it linearizes everything, making the challenge for aa too easy.  </span></span>
+<span id="cb43-11"><a href="#cb43-11" aria-hidden="true" tabindex="-1"></a>    debug <span class="op">=</span> <span class="va">False</span></span>
+<span id="cb43-12"><a href="#cb43-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb43-13"><a href="#cb43-13" aria-hidden="true" tabindex="-1"></a>    total_steps <span class="op">=</span> <span class="bu">len</span>(train_dataset)<span class="op">//</span>batch_size <span class="op">*</span> max_epochs</span>
+<span id="cb43-14"><a href="#cb43-14" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">"total_steps = "</span>,total_steps)</span>
+<span id="cb43-15"><a href="#cb43-15" aria-hidden="true" tabindex="-1"></a>    scheduler <span class="op">=</span> torch.optim.lr_scheduler.OneCycleLR(opt_given, max_lr<span class="op">=</span><span class="fl">0.025</span>, total_steps<span class="op">=</span>total_steps)</span>
+<span id="cb43-16"><a href="#cb43-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb43-17"><a href="#cb43-17" aria-hidden="true" tabindex="-1"></a>    <span class="cf">while</span> epoch <span class="op">&lt;</span> max_epochs:  <span class="co"># training loop</span></span>
+<span id="cb43-18"><a href="#cb43-18" aria-hidden="true" tabindex="-1"></a>        <span class="cf">with</span> tqdm(train_dl, unit<span class="op">=</span><span class="st">"batch"</span>) <span class="im">as</span> tepoch:</span>
+<span id="cb43-19"><a href="#cb43-19" aria-hidden="true" tabindex="-1"></a>            <span class="cf">for</span> batch <span class="kw">in</span> tepoch:   <span class="co"># training</span></span>
+<span id="cb43-20"><a href="#cb43-20" aria-hidden="true" tabindex="-1"></a>                opt_given.zero_grad()</span>
+<span id="cb43-21"><a href="#cb43-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb43-22"><a href="#cb43-22" aria-hidden="true" tabindex="-1"></a>                batch <span class="op">=</span> (<span class="dv">2</span><span class="op">*</span>torch.rand(batch.shape)<span class="op">-</span><span class="dv">1</span>).to(device)                 </span>
+<span id="cb43-23"><a href="#cb43-23" aria-hidden="true" tabindex="-1"></a>                batch_out, emb <span class="op">=</span> given_model(batch)</span>
+<span id="cb43-24"><a href="#cb43-24" aria-hidden="true" tabindex="-1"></a>                batch_loss <span class="op">=</span> mseloss(batch_out, batch)</span>
+<span id="cb43-25"><a href="#cb43-25" aria-hidden="true" tabindex="-1"></a>                </span>
+<span id="cb43-26"><a href="#cb43-26" aria-hidden="true" tabindex="-1"></a>                mix <span class="op">=</span> batch <span class="op">+</span> (<span class="dv">2</span><span class="op">*</span>torch.rand(batch.shape)<span class="op">-</span><span class="dv">1</span>).to(device) <span class="co">#  "the mix"</span></span>
+<span id="cb43-27"><a href="#cb43-27" aria-hidden="true" tabindex="-1"></a>                mix_out, emb2 <span class="op">=</span> given_model(mix)</span>
+<span id="cb43-28"><a href="#cb43-28" aria-hidden="true" tabindex="-1"></a>                mix_loss <span class="op">=</span> mseloss(mix_out, mix)</span>
+<span id="cb43-29"><a href="#cb43-29" aria-hidden="true" tabindex="-1"></a>                </span>
+<span id="cb43-30"><a href="#cb43-30" aria-hidden="true" tabindex="-1"></a>                loss <span class="op">=</span> batch_loss <span class="op">+</span> mix_loss </span>
+<span id="cb43-31"><a href="#cb43-31" aria-hidden="true" tabindex="-1"></a>                </span>
+<span id="cb43-32"><a href="#cb43-32" aria-hidden="true" tabindex="-1"></a>                <span class="co">#if step &lt;= freeze_enc_at:</span></span>
+<span id="cb43-33"><a href="#cb43-33" aria-hidden="true" tabindex="-1"></a>                <span class="co">#    loss += 0.001*mseloss(emb, 0*emb)  # wee bit of L2 decay on given embeddings</span></span>
+<span id="cb43-34"><a href="#cb43-34" aria-hidden="true" tabindex="-1"></a>                log_dict <span class="op">=</span> {}</span>
+<span id="cb43-35"><a href="#cb43-35" aria-hidden="true" tabindex="-1"></a>                log_dict[<span class="st">'train_loss'</span>] <span class="op">=</span> loss.detach()</span>
+<span id="cb43-36"><a href="#cb43-36" aria-hidden="true" tabindex="-1"></a>                log_dict[<span class="st">'learning_rate'</span>] <span class="op">=</span> opt_given.param_groups[<span class="dv">0</span>][<span class="st">'lr'</span>]</span>
+<span id="cb43-37"><a href="#cb43-37" aria-hidden="true" tabindex="-1"></a>                </span>
+<span id="cb43-38"><a href="#cb43-38" aria-hidden="true" tabindex="-1"></a>                <span class="cf">if</span> step <span class="op">%</span> lossinfo_every <span class="op">==</span> <span class="dv">0</span>: </span>
+<span id="cb43-39"><a href="#cb43-39" aria-hidden="true" tabindex="-1"></a>                    tepoch.set_description(<span class="ss">f"Epoch </span><span class="sc">{</span>epoch<span class="op">+</span><span class="dv">1</span><span class="sc">}</span><span class="ss">/</span><span class="sc">{</span>max_epochs<span class="sc">}</span><span class="ss">"</span>)</span>
+<span id="cb43-40"><a href="#cb43-40" aria-hidden="true" tabindex="-1"></a>                    tepoch.set_postfix(loss<span class="op">=</span>loss.item())</span>
+<span id="cb43-41"><a href="#cb43-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb43-42"><a href="#cb43-42" aria-hidden="true" tabindex="-1"></a>                <span class="cf">if</span> step <span class="op">==</span> freeze_enc_at:  <span class="co"># freeze encoder after this many steps</span></span>
+<span id="cb43-43"><a href="#cb43-43" aria-hidden="true" tabindex="-1"></a>                    <span class="bu">print</span>(<span class="ss">f"Step = </span><span class="sc">{</span>step<span class="sc">}</span><span class="ss">: Freezing encoder."</span>)</span>
+<span id="cb43-44"><a href="#cb43-44" aria-hidden="true" tabindex="-1"></a>                    <span class="cf">for</span> param <span class="kw">in</span> given_model.encoder.parameters():</span>
+<span id="cb43-45"><a href="#cb43-45" aria-hidden="true" tabindex="-1"></a>                        param.requires_grad <span class="op">=</span> <span class="va">False</span></span>
+<span id="cb43-46"><a href="#cb43-46" aria-hidden="true" tabindex="-1"></a>                    given_model.encoder.train(<span class="va">False</span>)</span>
+<span id="cb43-47"><a href="#cb43-47" aria-hidden="true" tabindex="-1"></a>                    given_model.encoder.<span class="bu">eval</span>()</span>
+<span id="cb43-48"><a href="#cb43-48" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb43-49"><a href="#cb43-49" aria-hidden="true" tabindex="-1"></a>                loss.backward()</span>
+<span id="cb43-50"><a href="#cb43-50" aria-hidden="true" tabindex="-1"></a>                opt_given.step() </span>
+<span id="cb43-51"><a href="#cb43-51" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb43-52"><a href="#cb43-52" aria-hidden="true" tabindex="-1"></a>                <span class="co"># run on validation set</span></span>
+<span id="cb43-53"><a href="#cb43-53" aria-hidden="true" tabindex="-1"></a>                <span class="cf">with</span> torch.no_grad():</span>
+<span id="cb43-54"><a href="#cb43-54" aria-hidden="true" tabindex="-1"></a>                    val_batch <span class="op">=</span> <span class="bu">next</span>(<span class="bu">iter</span>(val_dl)).to(device)</span>
+<span id="cb43-55"><a href="#cb43-55" aria-hidden="true" tabindex="-1"></a>                    val_mix <span class="op">=</span> val_batch <span class="op">+</span> <span class="bu">next</span>(<span class="bu">iter</span>(val_dl)).to(device)</span>
+<span id="cb43-56"><a href="#cb43-56" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb43-57"><a href="#cb43-57" aria-hidden="true" tabindex="-1"></a>                    val_batch_out, emb <span class="op">=</span> given_model(val_batch)</span>
+<span id="cb43-58"><a href="#cb43-58" aria-hidden="true" tabindex="-1"></a>                    val_batch_loss <span class="op">=</span> mseloss(val_batch_out, val_batch)</span>
+<span id="cb43-59"><a href="#cb43-59" aria-hidden="true" tabindex="-1"></a>                    </span>
+<span id="cb43-60"><a href="#cb43-60" aria-hidden="true" tabindex="-1"></a>                    val_mix_out, emb2 <span class="op">=</span> given_model(val_mix)</span>
+<span id="cb43-61"><a href="#cb43-61" aria-hidden="true" tabindex="-1"></a>                    val_mix_loss <span class="op">=</span>  mseloss(val_mix_out, val_mix)</span>
+<span id="cb43-62"><a href="#cb43-62" aria-hidden="true" tabindex="-1"></a>                    </span>
+<span id="cb43-63"><a href="#cb43-63" aria-hidden="true" tabindex="-1"></a>                    val_loss <span class="op">=</span> val_batch_loss <span class="op">+</span> val_mix_loss</span>
+<span id="cb43-64"><a href="#cb43-64" aria-hidden="true" tabindex="-1"></a>                    log_dict[<span class="st">'val_batch_loss'</span>] <span class="op">=</span> val_batch_loss.detach()</span>
+<span id="cb43-65"><a href="#cb43-65" aria-hidden="true" tabindex="-1"></a>                    log_dict[<span class="st">'val_mix_loss'</span>] <span class="op">=</span> val_mix_loss.detach()</span>
+<span id="cb43-66"><a href="#cb43-66" aria-hidden="true" tabindex="-1"></a>                    log_dict[<span class="st">'val_loss'</span>] <span class="op">=</span> val_loss.detach()</span>
+<span id="cb43-67"><a href="#cb43-67" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb43-68"><a href="#cb43-68" aria-hidden="true" tabindex="-1"></a>                    <span class="cf">if</span> step <span class="op">%</span> demo_every <span class="op">==</span> <span class="dv">0</span>:</span>
+<span id="cb43-69"><a href="#cb43-69" aria-hidden="true" tabindex="-1"></a>                        log_dict[<span class="st">"given_map_demo_batch"</span>] <span class="op">=</span> wandb.Image(viz_given_batch(demo_batch, given_model))</span>
+<span id="cb43-70"><a href="#cb43-70" aria-hidden="true" tabindex="-1"></a>                        log_dict[<span class="st">"given_map_demo_mix"</span>] <span class="op">=</span> wandb.Image(viz_given_batch(demo_mix, given_model))</span>
+<span id="cb43-71"><a href="#cb43-71" aria-hidden="true" tabindex="-1"></a>                        log_dict[<span class="st">"outs_hist"</span>] <span class="op">=</span> wandb.Histogram(batch_out.cpu().detach().numpy())</span>
+<span id="cb43-72"><a href="#cb43-72" aria-hidden="true" tabindex="-1"></a>                        log_dict[<span class="st">"emb_hist"</span>] <span class="op">=</span> wandb.Histogram(emb.cpu().detach().numpy())</span>
+<span id="cb43-73"><a href="#cb43-73" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb43-74"><a href="#cb43-74" aria-hidden="true" tabindex="-1"></a>                wandb.log(log_dict)</span>
+<span id="cb43-75"><a href="#cb43-75" aria-hidden="true" tabindex="-1"></a>                step <span class="op">+=</span> <span class="dv">1</span></span>
+<span id="cb43-76"><a href="#cb43-76" aria-hidden="true" tabindex="-1"></a>                </span>
+<span id="cb43-77"><a href="#cb43-77" aria-hidden="true" tabindex="-1"></a>                scheduler.step()   </span>
+<span id="cb43-78"><a href="#cb43-78" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb43-79"><a href="#cb43-79" aria-hidden="true" tabindex="-1"></a>        epoch <span class="op">+=</span> <span class="dv">1</span></span>
+<span id="cb43-80"><a href="#cb43-80" aria-hidden="true" tabindex="-1"></a>        </span>
+<span id="cb43-81"><a href="#cb43-81" aria-hidden="true" tabindex="-1"></a>    wandb.finish()</span>
+<span id="cb43-82"><a href="#cb43-82" aria-hidden="true" tabindex="-1"></a>    torch.save(given_model.state_dict(), given_path)</span>
+<span id="cb43-83"><a href="#cb43-83" aria-hidden="true" tabindex="-1"></a><span class="cf">else</span>:</span>
+<span id="cb43-84"><a href="#cb43-84" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">"Nevermind all that. Proceed."</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Nevermind all that. Proceed.</code></pre>
+</div>
+</div>
+</section>
+<section id="check-that-the-decoder-is-working" class="level3">
+<h3 class="anchored" data-anchor-id="check-that-the-decoder-is-working">Check that the decoder is working</h3>
+<p>i.e.&nbsp;that we can do reconstruction to input space: <span class="math inline">\(f^{-1}(y): y \mapsto x\)</span></p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb45"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="vs">r"viz model ops for single 'stem' x:"</span>)</span>
+<span id="cb45-2"><a href="#cb45-2" aria-hidden="true" tabindex="-1"></a>viz_given_batch(demo_batch, given_model, show_recon<span class="op">=</span><span class="va">True</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>viz model ops for single 'stem' x:</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="aa-mixer-toy_files/figure-html/cell-41-output-2.png" class="img-fluid"></p>
+</div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb47"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb47-1"><a href="#cb47-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="vs">r"viz model ops for demo mix  x1+x2:"</span>)</span>
+<span id="cb47-2"><a href="#cb47-2" aria-hidden="true" tabindex="-1"></a>viz_given_batch(demo_mix, given_model, show_recon<span class="op">=</span><span class="va">True</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>viz model ops for demo mix  x1+x2:</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="aa-mixer-toy_files/figure-html/cell-42-output-2.png" class="img-fluid"></p>
+</div>
+</div>
+<p>If, in the left panel, the yellow markers are covering the blue markers, then we’re good to continue…</p>
+</section>
+<section id="algebra-1-king---man-woman-queen" class="level2">
+<h2 class="anchored" data-anchor-id="algebra-1-king---man-woman-queen">Algebra #1: “king - man + woman = queen”</h2>
+<p>ok, first some utility routines…</p>
+<section id="forward-do-math-with-xs-then-map-to-zs.-guess-and-check" class="level3">
+<h3 class="anchored" data-anchor-id="forward-do-math-with-xs-then-map-to-zs.-guess-and-check">“Forward”: Do math with x’s, then map to z’s. Guess and check?</h3>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb49"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb49-1"><a href="#cb49-1" aria-hidden="true" tabindex="-1"></a><span class="co"># vectors in input space</span></span>
+<span id="cb49-2"><a href="#cb49-2" aria-hidden="true" tabindex="-1"></a>xs <span class="op">=</span> <span class="dv">2</span><span class="op">*</span>torch.rand(<span class="dv">4</span>,<span class="dv">2</span>, requires_grad<span class="op">=</span><span class="va">False</span>)<span class="op">-</span><span class="dv">1</span> <span class="co"># </span></span>
+<span id="cb49-3"><a href="#cb49-3" aria-hidden="true" tabindex="-1"></a>xs[<span class="dv">3</span>] <span class="op">=</span> xs[<span class="dv">1</span>] <span class="op">-</span> xs[<span class="dv">0</span>] <span class="op">+</span> xs[<span class="dv">2</span>]  <span class="co"># queen = king - man + woman</span></span>
+<span id="cb49-4"><a href="#cb49-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb49-5"><a href="#cb49-5" aria-hidden="true" tabindex="-1"></a>plot_kmwq_demo(xs)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>orange dot shows the 'guess'</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="aa-mixer-toy_files/figure-html/cell-46-output-2.png" class="img-fluid"></p>
+</div>
+</div>
+</section>
+<section id="backward-summation" class="level3">
+<h3 class="anchored" data-anchor-id="backward-summation">“Backward” summation</h3>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb51"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb51-1"><a href="#cb51-1" aria-hidden="true" tabindex="-1"></a><span class="co"># vectors in input space</span></span>
+<span id="cb51-2"><a href="#cb51-2" aria-hidden="true" tabindex="-1"></a>zs <span class="op">=</span> <span class="dv">2</span><span class="op">*</span>torch.rand(<span class="dv">4</span>,<span class="dv">2</span>, requires_grad<span class="op">=</span><span class="va">False</span>)<span class="op">-</span><span class="dv">1</span> </span>
+<span id="cb51-3"><a href="#cb51-3" aria-hidden="true" tabindex="-1"></a>zs[<span class="dv">3</span>] <span class="op">=</span> zs[<span class="dv">1</span>] <span class="op">-</span> zs[<span class="dv">0</span>] <span class="op">+</span> zs[<span class="dv">2</span>] </span>
+<span id="cb51-4"><a href="#cb51-4" aria-hidden="true" tabindex="-1"></a>plot_kmwq_demo(zs, forward<span class="op">=</span><span class="va">False</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>orange dot shows the 'guess'</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="aa-mixer-toy_files/figure-html/cell-47-output-2.png" class="img-fluid"></p>
+</div>
+</div>
+</section>
+</section>
+<section id="algebra-2-demix-removing-things-from-a-mix" class="level2">
+<h2 class="anchored" data-anchor-id="algebra-2-demix-removing-things-from-a-mix">Algebra #2: “Demix” removing things from a mix</h2>
+<p>This is kind of the same thing as we just did but more of a (theoretical) “music” example.</p>
+<p>Pretend we’re mixing 4 stems. But then we want to remove the last one. We can do the math for that in the input space. But can we also do it in the aa embedding space?</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb53"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb53-1"><a href="#cb53-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> demix_fun(labels <span class="op">=</span> [<span class="st">'guitar'</span>,<span class="st">'drums'</span>,<span class="st">'bass'</span>,<span class="st">'vocal'</span>]):</span>
+<span id="cb53-2"><a href="#cb53-2" aria-hidden="true" tabindex="-1"></a>    i_rm <span class="op">=</span> random.randint(<span class="dv">0</span>,<span class="bu">len</span>(labels)<span class="op">-</span><span class="dv">1</span>)</span>
+<span id="cb53-3"><a href="#cb53-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-4"><a href="#cb53-4" aria-hidden="true" tabindex="-1"></a>    <span class="co"># input space</span></span>
+<span id="cb53-5"><a href="#cb53-5" aria-hidden="true" tabindex="-1"></a>    xs <span class="op">=</span> <span class="dv">2</span><span class="op">*</span>torch.rand(<span class="dv">4</span>,<span class="dv">2</span>, requires_grad<span class="op">=</span><span class="va">False</span>) <span class="op">-</span><span class="dv">1</span></span>
+<span id="cb53-6"><a href="#cb53-6" aria-hidden="true" tabindex="-1"></a>    mix <span class="op">=</span> xs.<span class="bu">sum</span>(dim<span class="op">=</span><span class="dv">0</span>).unsqueeze(<span class="dv">0</span>)</span>
+<span id="cb53-7"><a href="#cb53-7" aria-hidden="true" tabindex="-1"></a>    mix_rm <span class="op">=</span> mix <span class="op">-</span> xs[i_rm,:]  <span class="co"># subtract a stem in input space</span></span>
+<span id="cb53-8"><a href="#cb53-8" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="ss">f"mix_remove_</span><span class="sc">{</span>labels[i_rm]<span class="sc">}</span><span class="ss"> = </span><span class="sc">{</span>mix_rm<span class="sc">}</span><span class="ss">"</span>)</span>
+<span id="cb53-9"><a href="#cb53-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-10"><a href="#cb53-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-11"><a href="#cb53-11" aria-hidden="true" tabindex="-1"></a>    <span class="co"># do the op in embedding space</span></span>
+<span id="cb53-12"><a href="#cb53-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">with</span> torch.no_grad():</span>
+<span id="cb53-13"><a href="#cb53-13" aria-hidden="true" tabindex="-1"></a>        zs   <span class="op">=</span> aa_model.encode( given_model.encode(xs.to(device)) )</span>
+<span id="cb53-14"><a href="#cb53-14" aria-hidden="true" tabindex="-1"></a>        zmix <span class="op">=</span> aa_model.encode( given_model.encode(mix.to(device)) )</span>
+<span id="cb53-15"><a href="#cb53-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-16"><a href="#cb53-16" aria-hidden="true" tabindex="-1"></a>        zmix_rm <span class="op">=</span> zmix <span class="op">-</span> zs[i_rm,:]  <span class="co"># subtract a stem in aa embedding space!</span></span>
+<span id="cb53-17"><a href="#cb53-17" aria-hidden="true" tabindex="-1"></a>        guess <span class="op">=</span> given_model.decode( aa_model.decode(zmix_rm) ).cpu()  <span class="co"># convert to input space</span></span>
+<span id="cb53-18"><a href="#cb53-18" aria-hidden="true" tabindex="-1"></a>        <span class="bu">print</span>(<span class="ss">f"guess =          </span><span class="sc">{</span>guess<span class="sc">}</span><span class="ss">"</span>)</span>
+<span id="cb53-19"><a href="#cb53-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-20"><a href="#cb53-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-21"><a href="#cb53-21" aria-hidden="true" tabindex="-1"></a>    <span class="co">#plot what we got, in input space </span></span>
+<span id="cb53-22"><a href="#cb53-22" aria-hidden="true" tabindex="-1"></a>    fig, ax <span class="op">=</span> plt.subplots(figsize<span class="op">=</span>(<span class="dv">7</span>,<span class="dv">7</span>))</span>
+<span id="cb53-23"><a href="#cb53-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-24"><a href="#cb53-24" aria-hidden="true" tabindex="-1"></a>    ax.text(<span class="dv">0</span>,<span class="dv">0</span> ,<span class="ss">f"origin"</span>)</span>
+<span id="cb53-25"><a href="#cb53-25" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">4</span>):         <span class="co"># plot all the stems and put labels on them </span></span>
+<span id="cb53-26"><a href="#cb53-26" aria-hidden="true" tabindex="-1"></a>        ax.arrow(<span class="dv">0</span>,<span class="dv">0</span>, xs[i,<span class="dv">0</span>], xs[i,<span class="dv">1</span>], length_includes_head<span class="op">=</span><span class="va">True</span>, head_width<span class="op">=</span><span class="fl">0.05</span>, head_length<span class="op">=</span><span class="fl">0.1</span>)  <span class="co"># plot vectors for stems</span></span>
+<span id="cb53-27"><a href="#cb53-27" aria-hidden="true" tabindex="-1"></a>        ax.annotate(<span class="st">""</span>, xy<span class="op">=</span>(xs[i,<span class="dv">0</span>], xs[i,<span class="dv">1</span>]), xytext<span class="op">=</span>(<span class="dv">0</span>, <span class="dv">0</span>), arrowprops<span class="op">=</span><span class="bu">dict</span>(arrowstyle<span class="op">=</span><span class="st">"-&gt;"</span>))</span>
+<span id="cb53-28"><a href="#cb53-28" aria-hidden="true" tabindex="-1"></a>        ax.text(xs[i,<span class="dv">0</span>],xs[i,<span class="dv">1</span>],<span class="ss">f"</span><span class="sc">{</span>labels[i]<span class="sc">}</span><span class="ss">"</span>)</span>
+<span id="cb53-29"><a href="#cb53-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-30"><a href="#cb53-30" aria-hidden="true" tabindex="-1"></a>    plt.plot(mix[:,<span class="dv">0</span>],mix[:,<span class="dv">1</span>], marker<span class="op">=</span><span class="st">'o'</span>, markersize<span class="op">=</span><span class="dv">10</span>)  <span class="co"># also plot and label the mix</span></span>
+<span id="cb53-31"><a href="#cb53-31" aria-hidden="true" tabindex="-1"></a>    ax.text(mix[:,<span class="dv">0</span>],mix[:,<span class="dv">1</span>], <span class="st">"mix"</span>)</span>
+<span id="cb53-32"><a href="#cb53-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-33"><a href="#cb53-33" aria-hidden="true" tabindex="-1"></a>    <span class="co"># connect mix and removed value</span></span>
+<span id="cb53-34"><a href="#cb53-34" aria-hidden="true" tabindex="-1"></a>    dx <span class="op">=</span> mix_rm <span class="op">-</span> mix </span>
+<span id="cb53-35"><a href="#cb53-35" aria-hidden="true" tabindex="-1"></a>    ax.arrow(mix[<span class="dv">0</span>][<span class="dv">0</span>], mix[<span class="dv">0</span>][<span class="dv">1</span>], dx[<span class="dv">0</span>][<span class="dv">0</span>], dx[<span class="dv">0</span>][<span class="dv">1</span>], length_includes_head<span class="op">=</span><span class="va">True</span>, head_width<span class="op">=</span><span class="fl">0.05</span>, head_length<span class="op">=</span><span class="fl">0.1</span>)  </span>
+<span id="cb53-36"><a href="#cb53-36" aria-hidden="true" tabindex="-1"></a>    ax.annotate(<span class="st">""</span>, xy<span class="op">=</span>(xs[i,<span class="dv">0</span>], xs[i,<span class="dv">1</span>]), xytext<span class="op">=</span>(<span class="dv">0</span>, <span class="dv">0</span>), arrowprops<span class="op">=</span><span class="bu">dict</span>(arrowstyle<span class="op">=</span><span class="st">"-&gt;"</span>))</span>
+<span id="cb53-37"><a href="#cb53-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-38"><a href="#cb53-38" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-39"><a href="#cb53-39" aria-hidden="true" tabindex="-1"></a>    ax.plot(mix_rm[:,<span class="dv">0</span>],mix_rm[:,<span class="dv">1</span>], marker<span class="op">=</span><span class="st">'o'</span>, label<span class="op">=</span><span class="ss">f'mix_remove_</span><span class="sc">{</span>labels[i_rm]<span class="sc">}</span><span class="ss">'</span>, linestyle<span class="op">=</span><span class="st">'None'</span>, markersize<span class="op">=</span><span class="dv">10</span>) <span class="co"># plot the point in real space</span></span>
+<span id="cb53-40"><a href="#cb53-40" aria-hidden="true" tabindex="-1"></a>    ax.text(mix_rm[:,<span class="dv">0</span>],mix_rm[:,<span class="dv">1</span>], <span class="ss">f'mix_remove_</span><span class="sc">{</span>labels[i_rm]<span class="sc">}</span><span class="ss">'</span>)</span>
+<span id="cb53-41"><a href="#cb53-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-42"><a href="#cb53-42" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-43"><a href="#cb53-43" aria-hidden="true" tabindex="-1"></a>    ax.plot(guess[:,<span class="dv">0</span>],guess[:,<span class="dv">1</span>], marker<span class="op">=</span><span class="st">'o'</span>, label<span class="op">=</span><span class="st">'guess from aa'</span>, linestyle<span class="op">=</span><span class="st">'None'</span>, markersize<span class="op">=</span><span class="dv">10</span>) <span class="co"># guess = input recon of what was done in aa emb space</span></span>
+<span id="cb53-44"><a href="#cb53-44" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-45"><a href="#cb53-45" aria-hidden="true" tabindex="-1"></a>    plt.axis(<span class="st">'square'</span>)</span>
+<span id="cb53-46"><a href="#cb53-46" aria-hidden="true" tabindex="-1"></a>    ax.set_aspect(<span class="st">'equal'</span>, adjustable<span class="op">=</span><span class="st">'box'</span>)</span>
+<span id="cb53-47"><a href="#cb53-47" aria-hidden="true" tabindex="-1"></a>    ax.set_title(<span class="st">"input space"</span>)</span>
+<span id="cb53-48"><a href="#cb53-48" aria-hidden="true" tabindex="-1"></a>    ax.legend(fancybox<span class="op">=</span><span class="va">True</span>, framealpha<span class="op">=</span><span class="fl">0.6</span>, prop<span class="op">=</span>{<span class="st">'size'</span>: <span class="dv">10</span>})</span>
+<span id="cb53-49"><a href="#cb53-49" aria-hidden="true" tabindex="-1"></a>    plt.show()</span>
+<span id="cb53-50"><a href="#cb53-50" aria-hidden="true" tabindex="-1"></a>    </span>
+<span id="cb53-51"><a href="#cb53-51" aria-hidden="true" tabindex="-1"></a>demix_fun()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>mix_remove_drums = tensor([[0.4061, 0.8386]])
+guess =          tensor([[0.4127, 0.8588]])</code></pre>
+</div>
+<div class="cell-output cell-output-display">
+<p><img src="aa-mixer-toy_files/figure-html/cell-48-output-2.png" class="img-fluid"></p>
+</div>
+</div>
+<p>If the green dot is covering the orange dot, then it worked!</p>
+
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+window.document.addEventListener("DOMContentLoaded", function (event) {
+  const toggleBodyColorMode = (bsSheetEl) => {
+    const mode = bsSheetEl.getAttribute("data-mode");
+    const bodyEl = window.document.querySelector("body");
+    if (mode === "dark") {
+      bodyEl.classList.add("quarto-dark");
+      bodyEl.classList.remove("quarto-light");
+    } else {
+      bodyEl.classList.add("quarto-light");
+      bodyEl.classList.remove("quarto-dark");
+    }
+  }
+  const toggleBodyColorPrimary = () => {
+    const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
+    if (bsSheetEl) {
+      toggleBodyColorMode(bsSheetEl);
+    }
+  }
+  toggleBodyColorPrimary();  
+  const icon = "";
+  const anchorJS = new window.AnchorJS();
+  anchorJS.options = {
+    placement: 'right',
+    icon: icon
+  };
+  anchorJS.add('.anchored');
+  const clipboard = new window.ClipboardJS('.code-copy-button', {
+    target: function(trigger) {
+      return trigger.previousElementSibling;
+    }
+  });
+  clipboard.on('success', function(e) {
+    // button target
+    const button = e.trigger;
+    // don't keep focus
+    button.blur();
+    // flash "checked"
+    button.classList.add('code-copy-button-checked');
+    var currentTitle = button.getAttribute("title");
+    button.setAttribute("title", "Copied!");
+    let tooltip;
+    if (window.bootstrap) {
+      button.setAttribute("data-bs-toggle", "tooltip");
+      button.setAttribute("data-bs-placement", "left");
+      button.setAttribute("data-bs-title", "Copied!");
+      tooltip = new bootstrap.Tooltip(button, 
+        { trigger: "manual", 
+          customClass: "code-copy-button-tooltip",
+          offset: [0, -8]});
+      tooltip.show();    
+    }
+    setTimeout(function() {
+      if (tooltip) {
+        tooltip.hide();
+        button.removeAttribute("data-bs-title");
+        button.removeAttribute("data-bs-toggle");
+        button.removeAttribute("data-bs-placement");
+      }
+      button.setAttribute("title", currentTitle);
+      button.classList.remove('code-copy-button-checked');
+    }, 1000);
+    // clear code selection
+    e.clearSelection();
+  });
+  function tippyHover(el, contentFn) {
+    const config = {
+      allowHTML: true,
+      content: contentFn,
+      maxWidth: 500,
+      delay: 100,
+      arrow: false,
+      appendTo: function(el) {
+          return el.parentElement;
+      },
+      interactive: true,
+      interactiveBorder: 10,
+      theme: 'quarto',
+      placement: 'bottom-start'
+    };
+    window.tippy(el, config); 
+  }
+  const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+  for (var i=0; i<noterefs.length; i++) {
+    const ref = noterefs[i];
+    tippyHover(ref, function() {
+      // use id or data attribute instead here
+      let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+      try { href = new URL(href).hash; } catch {}
+      const id = href.replace(/^#\/?/, "");
+      const note = window.document.getElementById(id);
+      return note.innerHTML;
+    });
+  }
+  const findCites = (el) => {
+    const parentEl = el.parentElement;
+    if (parentEl) {
+      const cites = parentEl.dataset.cites;
+      if (cites) {
+        return {
+          el,
+          cites: cites.split(' ')
+        };
+      } else {
+        return findCites(el.parentElement)
+      }
+    } else {
+      return undefined;
+    }
+  };
+  var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+  for (var i=0; i<bibliorefs.length; i++) {
+    const ref = bibliorefs[i];
+    const citeInfo = findCites(ref);
+    if (citeInfo) {
+      tippyHover(citeInfo.el, function() {
+        var popup = window.document.createElement('div');
+        citeInfo.cites.forEach(function(cite) {
+          var citeDiv = window.document.createElement('div');
+          citeDiv.classList.add('hanging-indent');
+          citeDiv.classList.add('csl-entry');
+          var biblioDiv = window.document.getElementById('ref-' + cite);
+          if (biblioDiv) {
+            citeDiv.innerHTML = biblioDiv.innerHTML;
+          }
+          popup.appendChild(citeDiv);
+        });
+        return popup.innerHTML;
+      });
+    }
+  }
+});
+</script>
+</div> <!-- /content -->
+
+
+
+</body></html>

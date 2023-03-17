@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://drscotthawley.github.io/audio-algebra/index.html</loc>
+    <lastmod>2023-03-17T23:52:37.527Z</lastmod>
+  </url>
+  <url>
+    <loc>https://drscotthawley.github.io/audio-algebra/datasets.html</loc>
+    <lastmod>2023-03-17T23:52:38.235Z</lastmod>
+  </url>
+  <url>
+    <loc>https://drscotthawley.github.io/audio-algebra/aa-mixer-toy.html</loc>
+    <lastmod>2023-03-17T23:52:39.007Z</lastmod>
+  </url>
+  <url>
+    <loc>https://drscotthawley.github.io/audio-algebra/aa-mixer.html</loc>
+    <lastmod>2023-03-17T23:52:39.395Z</lastmod>
+  </url>
+  <url>
+    <loc>https://drscotthawley.github.io/audio-algebra/destructo.html</loc>
+    <lastmod>2023-03-17T23:52:40.179Z</lastmod>
+  </url>
+  <url>
+    <loc>https://drscotthawley.github.io/audio-algebra/given-models.html</loc>
+    <lastmod>2023-03-17T23:52:42.231Z</lastmod>
+  </url>
+  <url>
+    <loc>https://drscotthawley.github.io/audio-algebra/aa-effects.html</loc>
+    <lastmod>2023-03-17T23:52:43.819Z</lastmod>
+  </url>
+  <url>
+    <loc>https://drscotthawley.github.io/audio-algebra/diffusiondvae.html</loc>
+    <lastmod>2023-03-17T23:52:44.119Z</lastmod>
+  </url>
+</urlset>
