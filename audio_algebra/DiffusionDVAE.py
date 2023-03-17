@@ -18,7 +18,7 @@ from torch import multiprocessing as mp
 from torch.nn import functional as F
 from torch.utils import data as torchdata
 import pytorch_lightning as pl
-from pytorch_lightning.utilities.distributed import rank_zero_only
+#from pytorch_lightning.utilities.distributed import rank_zero_only
 from tqdm import trange 
 
 from einops import rearrange
