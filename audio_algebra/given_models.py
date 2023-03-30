@@ -35,7 +35,7 @@ from .DiffusionDVAE import DiffusionDVAE, sample
 
 # %% auto 0
 __all__ = ['GivenModelClass', 'SpectrogramAE', 'MagSpectrogramAE', 'MagDPhaseSpectrogramAE', 'MelSpectrogramAE', 'DVAEWrapper',
-           'DMAE1d', 'RAVEWrapper']
+           'StackedDiffAEWrapper', 'DMAE1d', 'RAVEWrapper']
 
 # %% ../given-models.ipynb 8
 class GivenModelClass(nn.Module):
@@ -344,19 +344,66 @@ class DVAEWrapper(GivenModelClass):
         freeze(self.model)  # freeze the weights for inference
 
 # %% ../given-models.ipynb 27
-import torch
+from .StackedDiffAE import LatentAudioDiffusionAutoencoder
+from .StackedDiffAE import sample as stacked_sample
+from autoencoders.models import AudioAutoencoder # audio-diffusion
+
+# %% ../given-models.ipynb 28
+class StackedDiffAEWrapper(GivenModelClass):
+    "Wrapper for (hawley's fork of) Zach's Stacked Latent DiffAE model"
+    def __init__(self, 
+        debug=True,
+        **kwargs,
+    ):
+        super().__init__()
+        self.debug = debug
+
+        first_stage_config = {"capacity": 64, "c_mults": [2, 4, 8, 16, 32], "strides": [2, 2, 2, 2, 2], "latent_dim": 32}
+        self.first_stage_autoencoder = AudioAutoencoder( **first_stage_config ).requires_grad_(False)
+        self.model = LatentAudioDiffusionAutoencoder(autoencoder=self.first_stage_autoencoder)
+
+        self.ckpt_info={'ckpt_url':'',
+                        'ckpt_hash':'91f33839ecb6e3c41b1e89e1a9e0de0dac2ebe1795efa034797429c202600a58', # old PyL version btw
+                        'gdrive_path':'',
+                        'ckpt_path':'~/checkpoints/stacked-diffae-more-310k.ckpt'}
+        
+    def encode(self, reals: torch.Tensor) -> torch.Tensor:
+        return self.model.encode(reals) # returns a (coarsest) single stage of reps
+
+    def decode(self, reps: torch.Tensor, steps=100) -> torch.Tensor:
+        return self.model.decode(reps, steps=steps) 
+    
+    def setup(self, gdrive=True):  
+        ckpt_file = self.ckpt_info['ckpt_path']
+        print(f"{self.__class__.__name__}: attempting to load checkpoint {ckpt_file}")
+        self.get_checkpoint(gdrive=gdrive)
+        try:
+            self.model = LatentAudioDiffusionAutoencoder.load_from_checkpoint(self.ckpt_info['ckpt_path'], 
+                            autoencoder=self.first_stage_autoencoder, strict=True).requires_grad_(False)
+        except Exception as e:
+            print(f"Sorry, exception = {e}. Going with random weights")
+            
+        self.model.diffusion = self.model.diffusion_ema
+        self.model.latent_encoder = self.model.latent_encoder_ema
+        del self.model.diffusion_ema
+        del self.model.latent_encoder_ema
+        #self.model.encode_it = self.encode_it
+        #self.model.quantized = self.global_args.num_quantizers > 0 
+        self.model.eval() # disable randomness, dropout, etc...
+        freeze(self.model)  # freeze the weights for inference
+        print(f"{self.__class__.__name__}: Setup completed.")
+
+# %% ../given-models.ipynb 40
 from audio_diffusion_pytorch.components import (
     UNetV0,
     LTPlugin,
 )
 from audio_diffusion_pytorch.models import DiffusionAE
-import torch
-import torchaudio
 import pyloudnorm as pyln
 from torch import nn
 from audio_encoders_pytorch import TanhBottleneck, MelE1d
 
-# %% ../given-models.ipynb 28
+# %% ../given-models.ipynb 41
 class DMAE1d(GivenModelClass):
     def __init__(self, debug=False):
         super().__init__()
@@ -417,7 +464,7 @@ class DMAE1d(GivenModelClass):
     
     def setup(self, gdrive=True):  
         ckpt_file = os.path.expanduser(self.ckpt_info['ckpt_path'])
-        print(f"DMAE1d: attempting to load checkpoint {ckpt_file}")
+        print(f"{self.__class__.__name__}: attempting to load checkpoint {ckpt_file}")
         self.get_checkpoint(gdrive=gdrive)
         try:
             #self.model = self.model.load_from_checkpoint(ckpt_file, global_args=self.global_args)
@@ -429,7 +476,7 @@ class DMAE1d(GivenModelClass):
         self.model.eval() # disable randomness, dropout, etc...
         freeze(self.model)  # freeze the weights for inference
 
-# %% ../given-models.ipynb 34
+# %% ../given-models.ipynb 47
 class RAVEWrapper(GivenModelClass):
     "Wrapper for RAVE"
     def __init__(self,
