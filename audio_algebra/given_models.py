@@ -11,31 +11,29 @@ import torchaudio
 from torchaudio import transforms as T
 import pytorch_lightning as pl
 import math
-from tqdm import trange
 import subprocess
-
-
-# audio-diffusion imports
 from copy import deepcopy
 import pytorch_lightning as pl
-from diffusion.pqmf import CachedPQMF as PQMF
-from encoders.encoders import AttnResEncoder1D
-from autoencoders.soundstream import SoundStreamXLEncoder
-from dvae.residual_memcodes import ResidualMemcodes
-from decoders.diffusion_decoder import DiffusionAttnUnet1D
-from diffusion.model import ema_update
 from einops import rearrange
 
-# rave imports
 import rave
 import gin
 
+import laion_clap 
+from laion_clap.training.data import get_audio_features
+
+from aeiou.core import batch_it_crazy
 from aeiou.hpc import freeze
-from .DiffusionDVAE import DiffusionDVAE, sample
+from autoencoders.models import AudioAutoencoder
+
+from .DiffusionDVAE import DiffusionDVAE
+from .DiffusionDVAE import sample as dvae_sample
+from .StackedAELatentDiffusionCond import LatentAudioDiffusionAutoencoder, StackedAELatentDiffusionCond
+from .StackedAELatentDiffusionCond import sample as ldc_sample
 
 # %% auto 0
 __all__ = ['GivenModelClass', 'SpectrogramAE', 'MagSpectrogramAE', 'MagDPhaseSpectrogramAE', 'MelSpectrogramAE', 'DVAEWrapper',
-           'StackedDiffAEWrapper', 'DMAE1d', 'RAVEWrapper']
+           'StackedDiffAEWrapper', 'DMAE1d', 'RAVEWrapper', 'CLAPDAE']
 
 # %% ../given-models.ipynb 8
 class GivenModelClass(nn.Module):
@@ -76,7 +74,8 @@ class GivenModelClass(nn.Module):
             drive.mount('/content/drive/') 
             ckpt_file = '/content/drive/'+self.ckpt_info['gdrive_path']
             while not os.path.exists(ckpt_file):
-                print(f"\nPROBLEM: Expected to find the checkpoint file at {ckpt_file} but it's not there.\nWhere is it? (Go to the File system in the left sidebar and find it)")
+                print(f"\nPROBLEM: Expected to find the checkpoint file at {ckpt_file} but it's not there.")
+                print(f"Where is it? (Go to the File system in the left sidebar and find it)")
                 ckpt_file = input('Enter location of checkpoint file: ')
             self.ckpt_info['ckpt_path']= ckpt_file
         else:
@@ -87,7 +86,6 @@ class GivenModelClass(nn.Module):
                 if 'drive.google.com' in url:
                     # downloading large files from GDrive requires special treatment to bypass the dialog button it wants to throw up
                     id = url.split('/')[-2]
-                    #cmd = f'wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate \'https://docs.google.com/uc?export=download&id={id}\' -O- | sed -rn \'s/.*confirm=([0-9A-Za-z_]+).*/\1\\n/p\')&id={id}" -O {ckpt_file} && rm -rf /tmp/cookies.txt'
                     cmd = f"gdown -O {ckpt_file} {id}"
                 else:
                     print(f"Downloading to {ckpt_file}")
@@ -326,7 +324,7 @@ class DVAEWrapper(GivenModelClass):
     def decode(self, reps: torch.Tensor, demo_steps=None) -> torch.Tensor:
         #print("reps.shape, self.noise.shape = ",reps.shape, self.noise.shape)
         if demo_steps is None: demo_steps=self.demo_steps
-        fake_batches = sample(self.model.diffusion_ema, self.noise, demo_steps, 0, reps)
+        fake_batches = dvae_sample(self.model.diffusion_ema, self.noise, demo_steps, 0, reps)
         recon = rearrange(fake_batches, 'b d n -> d (b n)') # Put the demos together
         return recon
     
@@ -353,26 +351,45 @@ class StackedDiffAEWrapper(GivenModelClass):
     "Wrapper for (hawley's fork of) Zach's Stacked Latent DiffAE model"
     def __init__(self, 
         debug=True,
+        first_stage_config=None,
+        ckpt_info=None,
         **kwargs,
     ):
         super().__init__()
         self.debug = debug
 
-        first_stage_config = {"capacity": 64, "c_mults": [2, 4, 8, 16, 32], "strides": [2, 2, 2, 2, 2], "latent_dim": 32}
-        self.first_stage_autoencoder = AudioAutoencoder( **first_stage_config ).requires_grad_(False)
+        self.first_stage_config = first_stage_config if first_stage_config is not None else \
+            {"capacity": 64, "c_mults": [2, 4, 8, 16, 32], "strides": [2, 2, 2, 2, 2], "latent_dim": 32}
+        self.first_stage_autoencoder = AudioAutoencoder( **self.first_stage_config ).requires_grad_(False)
         self.model = LatentAudioDiffusionAutoencoder(autoencoder=self.first_stage_autoencoder)
-
-        self.ckpt_info={'ckpt_url':'',
-                        'ckpt_hash':'91f33839ecb6e3c41b1e89e1a9e0de0dac2ebe1795efa034797429c202600a58', # old PyL version btw
-                        'gdrive_path':'',
-                        'ckpt_path':'~/checkpoints/stacked-diffae-more-310k.ckpt'}
+        self.latent_dim = self.model.latent_dim 
+        self.latent_downsampling_ratio = self.model.latent_downsampling_ratio
+        
+        self.ckpt_info = ckpt_info if ckpt_info is not None else \
+            {'ckpt_path':'~/checkpoints/stacked-diffae-more-310k.ckpt',
+            'ckpt_hash':'91f33839ecb6e3c41b1e89e1a9e0de0dac2ebe1795efa034797429c202600a58', # old PyL version btw
+            'ckpt_url':'', 'gdrive_path':''}
         
     def encode(self, reals: torch.Tensor) -> torch.Tensor:
         return self.model.encode(reals) # returns a (coarsest) single stage of reps
-
-    def decode(self, reps: torch.Tensor, steps=100) -> torch.Tensor:
-        return self.model.decode(reps, steps=steps) 
     
+    def decode(self, reps: torch.Tensor, steps=100) -> torch.Tensor:
+        "goes all the way from small embeddings (latents) to larger embeddings to audio waveform output"
+        return self.model.decode(reps, steps=steps) 
+ 
+    # hawley added the following two functions to 'get inside'
+    def decode_stage1to2(self, small_reps:torch.Tensor, steps=100)-> torch.Tensor:
+        "takes output of encode (small embeddings) and produces next stage (large) embeddings"
+        latents = small_reps 
+        first_stage_latent_noise = torch.randn([latents.shape[0], self.latent_dim, latents.shape[2]*self.latent_downsampling_ratio]).to(small_reps.device)
+        first_stage_sampled = stacked_sample(self.model.diffusion, first_stage_latent_noise, steps, 0, cond=latents)
+        large_reps = first_stage_sampled
+        return large_reps
+ 
+    def decode_stage2(self, first_stage_sampled, steps=100) -> torch.Tensor: 
+        "goes from larger reps to audio output "
+        return self.model.autoencoder.decode(first_stage_sampled)
+
     def setup(self, gdrive=True):  
         ckpt_file = self.ckpt_info['ckpt_path']
         print(f"{self.__class__.__name__}: attempting to load checkpoint {ckpt_file}")
@@ -393,7 +410,9 @@ class StackedDiffAEWrapper(GivenModelClass):
         freeze(self.model)  # freeze the weights for inference
         print(f"{self.__class__.__name__}: Setup completed.")
 
-# %% ../given-models.ipynb 40
+# %% ../given-models.ipynb 42
+"""
+# this is incompatible with the version of audio_diffusion_pytorch we need for Zach's utilities
 from audio_diffusion_pytorch.components import (
     UNetV0,
     LTPlugin,
@@ -402,8 +421,9 @@ from audio_diffusion_pytorch.models import DiffusionAE
 import pyloudnorm as pyln
 from torch import nn
 from audio_encoders_pytorch import TanhBottleneck, MelE1d
+"""
 
-# %% ../given-models.ipynb 41
+# %% ../given-models.ipynb 43
 class DMAE1d(GivenModelClass):
     def __init__(self, debug=False):
         super().__init__()
@@ -476,7 +496,7 @@ class DMAE1d(GivenModelClass):
         self.model.eval() # disable randomness, dropout, etc...
         freeze(self.model)  # freeze the weights for inference
 
-# %% ../given-models.ipynb 47
+# %% ../given-models.ipynb 49
 class RAVEWrapper(GivenModelClass):
     "Wrapper for RAVE"
     def __init__(self,
@@ -523,3 +543,113 @@ class RAVEWrapper(GivenModelClass):
         reps = self.encode(waveform)
         recons = self.decode(reps)
         return (reps, recons)
+
+# %% ../given-models.ipynb 55
+class CLAPDAE(GivenModelClass):
+    "the decoder side of this is the 'demo' side of train_stacked_latent_clap_audio_all_wds.py"
+    def __init__(self, 
+            clap_fusion=True, 
+            clap_amodel='HTSAT-base', 
+            device='cuda', 
+            clap_device='cpu', # to save memory, run clap on possible different device
+            first_stage_config = {"capacity": 64, "c_mults": [2, 4, 8, 16, 32], "strides": [2, 2, 2, 2, 2], "latent_dim": 32},
+            sample_size = 1048576,
+            debug=True):
+        super().__init__()
+        self.device, self.clap_device, self.debug  = device, clap_device, debug
+        self.clap_ckpt_info={'ckpt_url':'',  # for decoder
+                        'ckpt_path':'~/checkpoints/CLAP/properties_paths_base_epoch_90.pt',
+                        'ckpt_hash':''}
+
+        self.clap_module = laion_clap.CLAP_Module(enable_fusion=clap_fusion, device=device, amodel=clap_amodel).requires_grad_(False).eval()
+        self.embedder, self.encoder = self.clap_module, self.clap_module # synonyms ;-) 
+        
+        # Zach's stacked conditional latent diff ae
+        self.latent_diffae_ckpt_info = {}
+        self.first_stage_config = first_stage_config
+        self.first_stage_autoencoder = AudioAutoencoder( **self.first_stage_config ).eval()  
+        self.latent_diffae_ckpt_info = {'ckpt_path':'~/checkpoints/stacked-diffae/stacked-diffae-more-310k.ckpt'}
+        self.latent_diffae = LatentAudioDiffusionAutoencoder(self.first_stage_autoencoder).eval()
+        
+        
+        self.saeldc_ckpt_info = {
+            'ckpt_path':'~/checkpoints/longer_songlike_22s.ckpt',
+        }
+        self.latent_diffusion_model = StackedAELatentDiffusionCond(latent_ae=self.latent_diffae, clap_module=self.clap_module)
+
+        self.sample_size = sample_size
+        self.demo_samples = sample_size
+        
+    def forward(self, waveform_in, *args, **kwargs):
+        assert False,'UserError: CLAPWrapper can only .encode()'
+        return None
+
+    @torch.no_grad()
+    def encode(self, audio_in, *args, **kwargs):
+        """note that CLAP will embed audio of *arbitrary length* to a single 512-dim vector,
+           however our decoder is trained to produce a certain length, so we batchify on encoding
+        """
+        audios = batch_it_crazy(audio_in, self.sample_size)
+        if self.debug: print("audio_in.shape, audios.shape =",audio_in.shape, audios.shape)
+        if len(audios.shape) < 3: audios = audios.unsqueeze(0)  # just in case: add batch dim if needed
+        self.reals = audios
+        audios_batch = [audio[0].to(self.clap_device) for audio in audios] #  clap wants a list of mono, really? 
+        #self.demo_samples = audios.shape[-1]
+        audio_embeddings = self.encoder.get_audio_embedding_from_data(audios_batch, use_tensor=True)
+        audio_embeddings = audio_embeddings.unsqueeze(1).to(self.latent_diffusion_model.device)
+        return audio_embeddings
+    
+    @torch.no_grad()
+    def decode(self, 
+               audio_embeddings, # outputse from 'encode'
+               cfg_scales=4,  # a single number or list of numbers e.g. [2,4,6]
+               demo_steps=100, 
+               **kwargs):
+        embeddings = audio_embeddings.to(self.device)
+        module = self.latent_diffusion_model
+        fakes_list = []
+        if type(cfg_scales) != list: cfg_scales = [cfg_scales]
+        for cfg_scale in cfg_scales:
+            print(f"Generating latents, CFG scale {cfg_scale}")
+            latent_noise = torch.randn([self.reals.shape[0], module.latent_dim, self.demo_samples//module.downsampling_ratio]).to(module.device)
+            print("latent_noise.shape =",latent_noise.shape)
+            fake_latents = ldc_sample(module.diffusion_ema, latent_noise, demo_steps, 0, embedding=embeddings, embedding_scale=cfg_scale)
+            fake_latents = fake_latents.clamp(-1, 1)
+            print(f"Decoding latents, shape: {fake_latents.shape}")
+            fakes = module.decode(fake_latents, steps=100)    
+            print("Rearranging demos")
+            fakes = rearrange(fakes, 'b c n -> c (b n)')  # unbatch / string the demos along together
+            fakes_list.append(fakes)
+        return fakes_list if len(cfg_scales)>1 else fakes_list[0]
+    
+    def setup(self, gdrive=True):  
+        # CLAP part
+        clap_ckpt_file = os.path.expanduser(self.clap_ckpt_info['ckpt_path'])
+        print(f"{self.__class__.__name__}: attempting to load CLAP checkpoint {clap_ckpt_file}")
+        if clap_ckpt_file:
+            try:
+                self.clap_module.load_ckpt(ckpt=clap_ckpt_file, verbose=False)
+            except TypeError:
+                print("  PRO TIP: For fewer loading messages, do `pip install git+https://github.com/drscotthawley/CLAP.git`",flush=True)
+                self.clap_module.load_ckpt(ckpt=clap_ckpt_file)
+            except Exception as e:
+                print("Exception {e}. Unable to load checkpoint as specified. Starting from scratch")
+                self.clap_module.load_ckpt(model_id=1)
+        else:
+            print("No checkpoint specified. Starting from scratch")
+            self.clap_module.load_ckpt(model_id=1) # no checkpoint found
+        self.clap_module = self.clap_module.to(self.device)
+        freeze(self.clap_module)
+        
+        # diffusion part 
+        latent_diffae_ckpt_path = self.latent_diffae_ckpt_info['ckpt_path']
+        print(f"{self.__class__.__name__}: attempting to load latent_diffae checkpoint {latent_diffae_ckpt_path}")
+        self.latent_diffae = LatentAudioDiffusionAutoencoder.load_from_checkpoint(latent_diffae_ckpt_path, autoencoder=self.first_stage_autoencoder, strict=False).eval()
+        self.latent_diffae = self.latent_diffae.to(self.clap_device) 
+        
+        latent_diffusion_model_ckpt_path = self.saeldc_ckpt_info['ckpt_path']
+        print(f"{self.__class__.__name__}: attempting to load StackedAELatentDiffusionCond checkpoint {latent_diffusion_model_ckpt_path}")
+        self.latent_diffusion_model = StackedAELatentDiffusionCond.load_from_checkpoint(latent_diffusion_model_ckpt_path, latent_ae=self.latent_diffae, clap_module=self.clap_module, strict=False).eval()
+        self.latent_diffusion_model = self.latent_diffusion_model.to(self.device)
+        print(f"Success! All checkpoints loaded. {self.__class__.__name__} is ready to go.")
+        
