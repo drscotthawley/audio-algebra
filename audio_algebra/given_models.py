@@ -596,18 +596,27 @@ class CLAPDAE(GivenModelClass):
 
 
     @torch.no_grad()
-    def encode(self, demo_reals, *args, **kwargs):
+    def embed(self, x, *args, **kwargs): # for audio embeddings
         """note that CLAP will embed audio of *arbitrary length* to a single 512-dim vector,
            however our decoder is trained to produce a certain length, so we batchify on encoding
         """
         module = self.latent_diffusion_model
-        if self.debug: print("      demo_reals.shape =",demo_reals.shape)
-        while len(demo_reals.shape) < 3: 
-            demo_reals = demo_reals.unsqueeze(0) # add batch and/or channel dimension if needed
-
-        audio_embeddings = module.embedder.get_audio_embedding_from_data(demo_reals.mean(dim=1), use_tensor=True)
-        audio_embeddings = audio_embeddings.unsqueeze(1).to(module.device)
-        return audio_embeddings
+        
+        if isinstance(x, str):  # get text embeddings
+            print(" embed: got text") 
+            embeddings = self.clap_module.get_text_embedding([x, ""], use_tensor=True)
+        else:                   # get audio embeddings
+            demo_reals = x
+            if self.debug: print("      demo_reals .shape, dtype =",demo_reals.shape, demo_reals.dtype)
+            while len(demo_reals.shape) < 3: 
+                demo_reals = demo_reals.unsqueeze(0) # add batch and/or channel dims 
+            embeddings = module.embedder.get_audio_embedding_from_data(demo_reals.mean(dim=1).to(module.device), use_tensor=True).to(demo_reals.dtype)
+               
+        embeddings = embeddings.unsqueeze(1)  # the way my routines like it, so dims will be [1,1,512]    
+        return embeddings
+    
+    def encode(self, demo_reals, *args, **kwargs): # synonym for embed
+        return embed(demo_reals, *args, **kwargs)
 
     
     @torch.no_grad()
@@ -621,7 +630,7 @@ class CLAPDAE(GivenModelClass):
                **kwargs):
         embeddings = audio_embeddings.to(self.device)
         module = self.latent_diffusion_model
-        self.latent_noise = torch.randn([batch_size, module.latent_dim, self.demo_samples//module.downsampling_ratio]).to(module.device) 
+        self.latent_noise = torch.randn([batch_size, module.latent_dim, self.demo_samples//module.downsampling_ratio], dtype=audio_embeddings.dtype, device=module.device) 
 
         latent_noise = self.latent_noise
         fakes_list = []

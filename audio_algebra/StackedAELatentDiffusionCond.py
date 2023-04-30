@@ -70,10 +70,10 @@ def alpha_sigma_to_t(alpha, sigma):
 @torch.no_grad()
 def sample(model, x, steps, eta, step_list=None, **extra_args):
     """Draws samples from a model given starting noise."""
-    print("sample: x.shape =",x.shape)
+    print("sample: x .shape, dtype device =",x.shape, x.dtype, x.device)
     ts = x.new_ones([x.shape[0]])
     if step_list is None:        # Create the noise schedule
-        t = torch.linspace(1, 0, steps + 1)[:-1]
+        t = torch.linspace(1, 0, steps + 1)[:-1].to(x.dtype).to(x.device)
     else:                        # Noise schedule already created & passed in 
         t = step_list
     #print("sample: t = ",t)
@@ -86,7 +86,7 @@ def sample(model, x, steps, eta, step_list=None, **extra_args):
 
         # Get the model output (v, the predicted velocity)
         #with torch.cuda.amp.autocast():
-        v = model(x, ts * t[i], **extra_args).float()
+        v = model(x, ts * t[i], **extra_args).to(x.dtype)
 
         # Predict the noise and the denoised image
         pred = x * alphas[i] - v * sigmas[i]
@@ -133,16 +133,16 @@ def resample(model_fn,
     if debug: print(f"resample: audio.shape = {audio.shape}, steps = {steps}, eta = {eta}, noise_level = {noise_level}")
     while len(audio.shape) < 3: 
         audio = audio.unsqueeze(0)  # add a batch dim and/or channel dim if needed
-    if debug: print(f"resample: audio.shape = {audio.shape}")
+    if debug: print(f"resample: audio.shape dtype device = {audio.shape} {audio.dtype} {audio.device}")
     
     batch_size=1
     
     if sampler_type.startswith("v-"):
-        t = torch.linspace(0, 1, steps + 1, device=device)
+        t = torch.linspace(0, 1, steps + 1, device=device, dtype=audio.dtype)
         step_list = t  # get_spliced_ddpm_cosine_schedule(t) #  get_crash_schedule(t)
         step_list = step_list[step_list < noise_level]
         alpha, sigma = get_alphas_sigmas(step_list[-1])
-        noised = torch.randn(audio.shape, device=device)
+        noised = torch.randn(audio.shape, device=device, dtype=audio.dtype)
 
         noised = audio.to(device) * alpha + noised * sigma
         noise = noised
@@ -207,7 +207,7 @@ class LatentAudioDiffusionAutoencoder(pl.LightningModule):
         return second_stage_latents
 
     def decode(self, latents, steps=100, device="cuda", init_audio=None, init_strength=0.4, debug=True):
-        first_stage_latent_noise = torch.randn([latents.shape[0], self.latent_dim, latents.shape[2]*self.latent_downsampling_ratio]).to(device)
+        first_stage_latent_noise = torch.randn([latents.shape[0], self.latent_dim, latents.shape[2]*self.latent_downsampling_ratio]).to(latents.dtype).to(device)
         if init_audio is None: 
             first_stage_sampled = sample(self.diffusion, first_stage_latent_noise, steps, 0, cond=latents)
         else:

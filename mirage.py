@@ -40,8 +40,8 @@ print("Finished with imports.")
 from time import sleep
 import random
 
-model, current_model_choice = None, None # global vars to keep (same) model initialized thru multiple GUI ops 
-
+model, current_model_choice = None, '' # global vars to keep (same) model initialized thru multiple GUI ops 
+half_precision = False 
 
 def unpack_audio_tup(audio_tup, verbose=True):
     """utility routine for process_audio: 
@@ -92,16 +92,41 @@ def repack_audio_tup(new_waveform, audio_info, verbose=True):
     return (audio_info['sr'], new_waveform) 
 
 
+def half_it(x, debug=True, for_audio_embed=False): 
+    "apply half precision if enabled, otherwise a no-op"
+    global half_precision
+    if (not half_precision) or (x is None): return x
+    if x == model: # aren't globals aweome: 
+        model.latent_diffusion_model.diffusion_ema.half()
+        model.latent_diffae.half()
+        model.clap_module.float() # just in case #  don't try to make CLAP work with half
+        return model
+    elif torch.is_tensor(x): 
+        return x.half()
+    raise TypeError(f'half_it: unexpected type x = {type(x)}')
+
+
 def get_model_ready(model_choice, device, verbose=True):
     """utility routine for process_audio: gets model ready if it's not already"""
-    global model, current_model_choice  # Hate using globals but how else to keep model initialized?
+    global model, current_model_choice, half_precision  # Hate using globals but how else to keep model initialized?
 
     if verbose: print("current_model_choice, model_choice =", current_model_choice, model_choice)
+    half_precision = 'fp16' in model_choice
+
     if model_choice != current_model_choice:
-        if verbose: print("Hang on, we need to load a new model...")
-        # TODO: ignoring all other model choices for now, lol. 
-        model = CLAPDAE(device=device)
-        model.setup()
+        # if only difference is precision, don't reload from checkpoint
+        if model_choice.replace('-fp16','') == current_model_choice.replace('-fp16',''): 
+            if verbose: print("Changing model precision...")
+            if 'fp16' in model_choice:
+                model = half_it(model)
+            else:
+                model.float()
+        else:
+            if verbose: print("Hang on, we need to load a new model...")
+            model = CLAPDAE(device=device)
+            model.setup()
+            model = half_it(model)
+            
         current_model_choice = model_choice
     elif model is not None:
         if verbose: print(f"Model's already loaded! {model.__class__.__name__}")
@@ -132,7 +157,11 @@ def interp_embeddings(emb1, emb2, interp_scale=0.5, interp_type='Spherical'):
         return lerp(emb1, emb2, interp_scale)
     else:
         return slerp(emb1, emb2, interp_scale)
+    
+def sdd_str(x): # shorthand because I print this info a lot
+    return f" shape, dtype, device = {x.shape}, {x.dtype}, {x.device}"
 
+    
 def process_audio(
     device,           # pytorch device to use
     audio_tup,        # a tuple of (sr, waveform) where sr is sample rate
@@ -148,6 +177,7 @@ def process_audio(
     show_embeddings=False, # whether to show the embeddings plot in the output - only in GUI mode
     ):
     """That code which processes the audio"""
+    global half_precision
     
     if verbose:
         print(f"\n --- process_audio: passed in:  device = {device}, audio_tup = {audio_tup}, cfg_scale = {cfg_scale}, model_choice = {model_choice}, audio_tup2 = {audio_tup2}")
@@ -159,14 +189,16 @@ def process_audio(
         raise gr.Error("No cfg_scale given.") 
         return None, None
     
+    half_precision = 'fp16' in model_choice
+    
     try:
         if verbose: print("process_audio: calling unpack_audio_tup")
-        waveform, audio_info = unpack_audio_tup(audio_tup, verbose=verbose)        
+        waveform, audio_info = unpack_audio_tup(audio_tup, verbose=verbose)
         waveform2, audio_info2 = unpack_audio_tup(audio_tup2, verbose=verbose)  # returns None, None if not given
         init_waveform, init_info = unpack_audio_tup(init_audio_tup, verbose=verbose)  # returns None, None if not given
         
         get_model_ready(model_choice, device, verbose=verbose) # if needed
-
+        
         ##---------------- Do the actual audio processing ------------------
         if waveform is not None: waveform = waveform.to(model.device)
         bypass_flip = False  # for testing gradio i/o faster: skips the model and just flips the audio 
@@ -175,40 +207,42 @@ def process_audio(
         else:    
             if verbose: print("\n-------  Now processing audio via model ---------")
             with torch.no_grad():    # turn off gradients
-                if verbose: print(f"  ------ Encoding:")
-                embeddings   = model.encode(waveform) if waveform is not None else None
+                if verbose: print(f"  ------ Encoding/Embedding:")
+                print("                      waveform.type = ",waveform.dtype)
+                embeddings   = model.embed(waveform) if waveform is not None else None
                 if text_prompt:
-                    embeddings = model.clap_module.get_text_embedding([text_prompt,""], use_tensor=True)[:1,:].to(device).unsqueeze(1)
-                    print("text_embedding.shape = ",embeddings.shape)
+                    embeddings = model.embed(text_prompt) # clap_module.get_text_embedding([text_prompt,""], use_tensor=True)[:1,:].to(device)
                 if waveform2 is not None: 
                     print("        HEY!  We're interpolatin'!")
-                    embeddings2   = model.encode(waveform2)
+                    embeddings2  = model.embed(waveform2)
                     embeddings = interp_embeddings(embeddings, embeddings2, interp_scale, interp_type=interp_type)
 
-                if verbose: print(f"\n  ------ Decoding, cfg_scale = {cfg_scale}")
+                if verbose: print(f"\n  ------ Decoding/Generating, cfg_scale = {cfg_scale}")
+                embeddings  = half_it(embeddings) # half only works on the decode side b/c CLAP doesn't like Half
                 
-                init_audio, init_audio_latents = None, None
+                init_audio_latents = None
                 if init_waveform is not None:  # init audio
                     print(f"        HEY!  We're doin' init audio!!")
-                    new_init_waveform = torch.zeros([2,model.sample_size],device=device) # TODO: the following is only to avoid off-by-1 errors in Flavio's AE.
+                    init_waveform = half_it(init_waveform)
+                    # TODO: the following 4 lines are a hack to avoid off-by-1 size mismatches in Flavio's AE.
+                    new_init_waveform = torch.zeros([2,model.sample_size], device=device, dtype=init_waveform.dtype) 
                     minlen = min( init_waveform.shape[-1], new_init_waveform.shape[-1] ) 
                     new_init_waveform[:,:minlen] = init_waveform[:,:minlen]
                     init_waveform = new_init_waveform
-                    init_audio_latents = model.latent_diffusion_model.encode(init_waveform.to(device)) 
-                    print("           init_audio_latents.shape = ",init_audio_latents.shape)
+                    init_audio_latents = model.latent_diffusion_model.encode(init_waveform.to(device))
+                    print(f"           init_audio_latents {sdd_str(init_audio_latents)}")
                     
                 fakes, fake_latents = model.generate(embeddings, cfg_scales=cfg_scale, init_audio=init_audio_latents, init_strength=init_strength, batch_size=1)
                 
                 if verbose: print("\n  ------ Finished decoding.  fakes.shape = ",fakes.shape)
         ##------------------------------------------------------------------
-        fakes = fakes.clamp(-1, 1).cpu()
         if audio_info is None:  # supply gradio defaults if generated from text prompt
             audio_info = {'sr':48000, 'mono_in':False, 'tensor_in':False, 'int_in':True, 'channels_first':False}
         new_audio_tup = repack_audio_tup(fakes, audio_info, verbose=verbose)
 
         if show_embeddings:
             if verbose: print("generating embeddings graph")
-            fig = pca_point_cloud(fake_latents, output_type='plotly')
+            fig = pca_point_cloud(fake_latents.float(), output_type='plotly', mode='lines+markers', color_scheme='')
         else:
             fig = None
     except Exception as e:   
@@ -221,7 +255,7 @@ def process_audio(
 
 
 
-def run_gui(device, verbose=True, public=False, model_choices=["model1", "model2", "model3"], **kwargs):
+def run_gui(device, verbose=True, public=False, model_choices=["model1", "model2", "model3"], model_choice=None, **kwargs):
     """Launches the GUI"""
     wrapper = partial(process_audio, device, verbose=verbose, show_embeddings=True) # package non-Gradio args into a single function
     demo = gr.Interface(fn=wrapper, 
@@ -229,7 +263,9 @@ def run_gui(device, verbose=True, public=False, model_choices=["model1", "model2
                         gr.Textbox(value="", label="Text Prompt (Takes precedence over 1st Audio Prompt)"),
                         #gr.Number(value=4, label="CFG scale (2 to 6 works)"),
                         gr.Slider(minimum=-5, maximum=50, value=4, label="CFG scale (Typically 2, 4, or 6, but we'll let the range be a bit crazy for testing)"),
-                        gr.Radio(model_choices, value=model_choices[0], label="Model choice"),
+                        gr.Radio(model_choices, 
+                                 value=(model_choices[0] if model_choice is None else model_choice), 
+                                 label="Model choice"),
                         gr.Audio(label="Optional: 2nd Audio Prompt for interpolation"),
                         gr.Slider(minimum=-0.05, maximum=1.05, value=0.5, label="Interpolation scale (0 = all 1st audio, 1 = all 2nd audio"),
                         gr.Radio(['Spherical', 'Linear'], value='Spherical', label="Interpolation type (Leave it on Spherical)"),
@@ -263,10 +299,11 @@ def save_html_hosting_info(share_url,
         f'    <meta property="og:url" content="{host_url}">'
         f'    <meta property="og:image" content={host_url}/mirage_screenshot.png">'
         """
-        <meta property="og:title" content="Demo of (MI)RAGE">'
+        <meta property="og:title" content="Demo of (MI)RAGE">
         <meta property="og:description" content="(Music Information) Retrieval-based Audio Generation via Entropy">
         </head>
         <body>
+        <h1>Redirecting</h1>
         Redirecting in 2 seconds.  If you are not automatically redirected, """ 
         f'click <a href="{share_url}">here</a>.'
         """
@@ -283,13 +320,13 @@ if __name__ == '__main__':
     app_name = Path(sys.argv[0]).stem # whatever we're going to call this script
     #print(f"Running {app_name}...")
 
-    model_choices = ['CLAPDAE-22s']
+    model_choices = ['CLAPDAE-22s','CLAPDAE-22s-fp16']
 
     parser = argparse.ArgumentParser(description=f"{app_name}", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-f", "--filename", type=str, help="Audio file to process. If none given, then runs GUI.", default="")
+    parser.add_argument('-g', '--gui', action='store_true', help="Run GUI even if filename was specified")
     parser.add_argument('-i', '--init', action='store_true', help="Initialize/load model before doing other things (otherwise waits for audio passed in")
     parser.add_argument("-m", "--model", type=str, default=model_choices[0], help=f"Model name to use, one of {model_choices}")
-    parser.add_argument('-g', '--gui', action='store_true', help="Run GUI even if filename was specified")
     parser.add_argument("-o", "--output", type=str, help="Output audio file (default is [filename_stem]_processed.wav)", default="")
     parser.add_argument("-s", "--sr", type=int, default=48000, help="Sample rate at which to resample audio file")
     parser.add_argument('-p', '--public', action='store_true', help="Run on public IP address (for Gradio sharing)")
@@ -302,7 +339,9 @@ if __name__ == '__main__':
 
     device = get_device()  # cuda, mps, cpu, etc
     if args.verbose: print("device =", device)
+    half_precision = 'fp16' in args.model
 
+    
     if args.init or args.filename: 
         if args.verbose: print("\nInitializing model...")
         get_model_ready(args.model, device, verbose=args.verbose) 
@@ -321,7 +360,7 @@ if __name__ == '__main__':
             
     if args.gui or (not args.filename):
         #print("Running GUI...")
-        run_gui(device, 
+        run_gui(device, model_choice=args.model,
             title="(MI)RAGE", verbose=args.verbose, public=args.public, model_choices=model_choices,
             #description="Music Information Retrieval-based Autoencoder for Generation via Entropy")
             description="(Music Information) Retrieval-based Audio Generation via Entropy. \nIf this demo dies, reload https://hedges.belmont.edu/mirage/")
