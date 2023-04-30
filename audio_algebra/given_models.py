@@ -604,7 +604,7 @@ class CLAPDAE(GivenModelClass):
         
         if isinstance(x, str):  # get text embeddings
             print(" embed: got text") 
-            embeddings = self.clap_module.get_text_embedding([x, ""], use_tensor=True)
+            embeddings = self.clap_module.get_text_embedding([x, ""], use_tensor=True)[:1,:].to(self.device)
         else:                   # get audio embeddings
             demo_reals = x
             if self.debug: print("      demo_reals .shape, dtype =",demo_reals.shape, demo_reals.dtype)

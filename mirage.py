@@ -159,7 +159,10 @@ def interp_embeddings(emb1, emb2, interp_scale=0.5, interp_type='Spherical'):
         return slerp(emb1, emb2, interp_scale)
     
 def sdd_str(x): # shorthand because I print this info a lot
-    return f" shape, dtype, device = {x.shape}, {x.dtype}, {x.device}"
+    if x is not None:
+        return f" shape, dtype, device = {x.shape}, {x.dtype}, {x.device}"
+    else:
+        return "None"
 
     
 def process_audio(
@@ -208,7 +211,6 @@ def process_audio(
             if verbose: print("\n-------  Now processing audio via model ---------")
             with torch.no_grad():    # turn off gradients
                 if verbose: print(f"  ------ Encoding/Embedding:")
-                print("                      waveform.type = ",waveform.dtype)
                 embeddings   = model.embed(waveform) if waveform is not None else None
                 if text_prompt:
                     embeddings = model.embed(text_prompt) # clap_module.get_text_embedding([text_prompt,""], use_tensor=True)[:1,:].to(device)
