@@ -624,31 +624,34 @@ class CLAPDAE(GivenModelClass):
                audio_embeddings, # outputs from 'encode'
                cfg_scales=4,  
                demo_steps=150,
-               init_audio=None,
+               init_audio_latents=None,
                init_strength=0.4,
                batch_size=1,
                **kwargs):
+        print("\n     GENERATE: init_audio_latents = ",init_audio_latents)
         embeddings = audio_embeddings.to(self.device)
         module = self.latent_diffusion_model
-        self.latent_noise = torch.randn([batch_size, module.latent_dim, self.demo_samples//module.downsampling_ratio], dtype=audio_embeddings.dtype, device=module.device) 
-
-        latent_noise = self.latent_noise
+        
+        latent_noise = torch.randn([batch_size, module.latent_dim, self.demo_samples//module.downsampling_ratio], dtype=audio_embeddings.dtype, device=module.device) 
         fakes_list = []
         if type(cfg_scales) != list: cfg_scales = [cfg_scales]
         for cfg_scale in cfg_scales:
-            print(f"Generating latents, CFG scale {cfg_scale}")
-            if init_audio is not None:
-                fake_latents = ldc_resample(module.diffusion_ema, init_audio, demo_steps, 0, embedding=embeddings, embedding_scale=cfg_scale,  noise_level=(1.0-init_strength))
+            print(f"        Generating latents, CFG scale {cfg_scale}.  latent_noise shape, dtype, device =",latent_noise.shape, latent_noise.dtype, latent_noise.device)
+            if init_audio_latents is not None:
+                init_audio_latents = init_audio_latents.repeat(batch_size,1,1)
+                print("       Calling resample with init_strength =",init_strength)
+                fake_latents = ldc_resample(module.diffusion_ema, init_audio_latents, demo_steps, 0, 
+                                            embedding=embeddings, embedding_scale=cfg_scale,  noise_level=(1.0-init_strength))
             else:
                 fake_latents = ldc_sample(module.diffusion_ema, latent_noise, demo_steps, 0, embedding=embeddings, embedding_scale=cfg_scale)
 
             fake_latents = fake_latents.clamp(-1, 1)
             
-            print(f"Decoding fake_latents of shape {fake_latents.shape} to audio length {self.sample_size}")
+            print(f"       Decoding fake_latents of shape {fake_latents.shape} to audio length {self.sample_size}")
             fakes = module.decode(fake_latents, steps=100)# , init_audio=init_audio, init_strength=init_strength)
-            print("Rearranging demos")
-            fakes = rearrange(fakes, 'b d n -> d (b n)')
-            print("   fakes.shape = ",fakes.shape)
+            print("       Rearranging demos")
+            fakes = rearrange(fakes, 'b d n -> d (b n)') # string batches along into 1 long thing
+            print("         fakes.shape = ",fakes.shape)
             fakes_list.append(fakes)
         #return fakes_list if len(cfg_scales)>1 else fakes_list[0]
         return fakes, fake_latents # quick hack

@@ -119,7 +119,7 @@ def sample(model, x, steps, eta, step_list=None, **extra_args):
 
 @torch.no_grad()
 def resample(model_fn, 
-             audio,  # note this is not real audio but rather latents of init audio
+             audio_latents,  # note this is not real audio but rather latents of init audio
              steps=100, 
              eta=0, 
              sampler_type="v-ddim", 
@@ -130,21 +130,21 @@ def resample(model_fn,
              effective_length=2048, # TODO: make more flexible later hard-coded now for 22s runs. 
              **extra_args):
     """from Dance_Diffusion.ipynb: Noise the input"""
-    if debug: print(f"resample: audio.shape = {audio.shape}, steps = {steps}, eta = {eta}, noise_level = {noise_level}")
-    while len(audio.shape) < 3: 
-        audio = audio.unsqueeze(0)  # add a batch dim and/or channel dim if needed
-    if debug: print(f"resample: audio.shape dtype device = {audio.shape} {audio.dtype} {audio.device}")
-    
+    if debug: print(f"resample: audio_latents.shape = {audio_latents.shape}, steps = {steps}, eta = {eta}, noise_level = {noise_level}")
+    while len(audio_latents.shape) < 3: 
+        audio_latents = audio_latents.unsqueeze(0)  # add a batch dim and/or channel dim if needed
+    if debug: print(f"resample: audio_latents.shape dtype device = {audio_latents.shape} {audio_latents.dtype} {audio_latents.device}")
+
     batch_size=1
     
     if sampler_type.startswith("v-"):
-        t = torch.linspace(0, 1, steps + 1, device=device, dtype=audio.dtype)
+        t = torch.linspace(0, 1, steps + 1, device=device, dtype=audio_latents.dtype)
         step_list = t  # get_spliced_ddpm_cosine_schedule(t) #  get_crash_schedule(t)
         step_list = step_list[step_list < noise_level]
         alpha, sigma = get_alphas_sigmas(step_list[-1])
-        noised = torch.randn(audio.shape, device=device, dtype=audio.dtype)
+        noised = torch.randn(audio_latents.shape, device=device, dtype=audio_latents.dtype)
 
-        noised = audio.to(device) * alpha + noised * sigma
+        noised = audio_latents.to(device) * alpha + noised * sigma
         noise = noised
         return sample(model_fn, noise, steps, eta, step_list=step_list.flip(0)[:-1], **extra_args)
     else:
@@ -199,11 +199,10 @@ class LatentAudioDiffusionAutoencoder(pl.LightningModule):
 
     def encode(self, reals):
         first_stage_latents = self.autoencoder.encode(reals)
-
+        print("            ---  torch.std(first_stage_latents) =",torch.std(first_stage_latents))
         second_stage_latents = self.latent_encoder(first_stage_latents)
-
+        print("            ---  torch.std(second_stage_latents) =",torch.std(second_stage_latents))
         second_stage_latents = torch.tanh(second_stage_latents)
-
         return second_stage_latents
 
     def decode(self, latents, steps=100, device="cuda", init_audio=None, init_strength=0.4, debug=True):

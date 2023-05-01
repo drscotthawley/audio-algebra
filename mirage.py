@@ -167,13 +167,14 @@ def sdd_str(x): # shorthand because I print this info a lot
     
 def process_audio(
     device,           # pytorch device to use
-    audio_tup,        # a tuple of (sr, waveform) where sr is sample rate
+    audio_tup=None,        # a tuple of (sr, waveform) where sr is sample rate
     text_prompt="",
+    audio_tup2=None,  # optional 2nd audio for interpolation
+    text_prompt2="",
+    interp_scale=0.5, # relative strength of audio_tup & audio_tup2
+    batch_size=1,
     cfg_scale=4.0,    # cfg scale, a number
     model_choice='CLAPDAE-22s', # a string, the name of the model to use
-    audio_tup2=None,  # optional 2nd audio for interpolation
-    interp_scale=0.5, # relative strength of audio_tup & audio_tup2
-    interp_type='Spherical', # interpolation method 
     init_audio_tup=None, 
     init_strength=0.4,
     verbose=True, # how much info we print while executing
@@ -183,7 +184,7 @@ def process_audio(
     global half_precision
     
     if verbose:
-        print(f"\n --- process_audio: passed in:  device = {device}, audio_tup = {audio_tup}, cfg_scale = {cfg_scale}, model_choice = {model_choice}, audio_tup2 = {audio_tup2}")
+        print(f"\n --- process_audio: passed in:  device = {device}, audio_tup = {audio_tup}, cfg_scale = {cfg_scale}, model_choice = {model_choice}, audio_tup2 = {audio_tup2}, init_audio_tup = {init_audio_tup}")
     
     if audio_tup is None and not text_prompt: 
         raise gr.Error("No audio or text prompt passed in.") 
@@ -195,6 +196,7 @@ def process_audio(
     half_precision = 'fp16' in model_choice
     
     try:
+        batch_size = int(batch_size)
         if verbose: print("process_audio: calling unpack_audio_tup")
         waveform, audio_info = unpack_audio_tup(audio_tup, verbose=verbose)
         waveform2, audio_info2 = unpack_audio_tup(audio_tup2, verbose=verbose)  # returns None, None if not given
@@ -210,21 +212,24 @@ def process_audio(
         else:    
             if verbose: print("\n-------  Now processing audio via model ---------")
             with torch.no_grad():    # turn off gradients
-                if verbose: print(f"  ------ Encoding/Embedding:")
+                
+                
+                if verbose: print(f"  ------ Getting CLAP Embeddings:")
                 embeddings   = model.embed(waveform) if waveform is not None else None
                 if text_prompt:
-                    embeddings = model.embed(text_prompt) # clap_module.get_text_embedding([text_prompt,""], use_tensor=True)[:1,:].to(device)
-                if waveform2 is not None: 
-                    print("        HEY!  We're interpolatin'!")
-                    embeddings2  = model.embed(waveform2)
-                    embeddings = interp_embeddings(embeddings, embeddings2, interp_scale, interp_type=interp_type)
-
-                if verbose: print(f"\n  ------ Decoding/Generating, cfg_scale = {cfg_scale}")
+                    embeddings = model.embed(text_prompt) # text prompt supersedes audio 1 (bc currently lazy)
+                if (waveform2 is not None) or text_prompt2:  # interpolation
+                    embeddings2  = model.embed(text_prompt2) if text_prompt2 else model.embed(waveform2)
+                    print("      --- Interpolating CLAP Embeddings")
+                    interp_type='Spherical', # interpolation method 
+                    embeddings = interp_embeddings(embeddings, embeddings2, interp_scale, interp_type=interp_type)     
                 embeddings  = half_it(embeddings) # half only works on the decode side b/c CLAP doesn't like Half
                 
+                
                 init_audio_latents = None
+                print("        init_waveform = ",init_waveform)
                 if init_waveform is not None:  # init audio
-                    print(f"        HEY!  We're doin' init audio!!")
+                    print(f"      ---- Preparing latents of init_audio")
                     init_waveform = half_it(init_waveform)
                     # TODO: the following 4 lines are a hack to avoid off-by-1 size mismatches in Flavio's AE.
                     new_init_waveform = torch.zeros([2,model.sample_size], device=device, dtype=init_waveform.dtype) 
@@ -234,16 +239,25 @@ def process_audio(
                     init_audio_latents = model.latent_diffusion_model.encode(init_waveform.to(device))
                     print(f"           init_audio_latents {sdd_str(init_audio_latents)}")
                     
-                fakes, fake_latents = model.generate(embeddings, cfg_scales=cfg_scale, init_audio=init_audio_latents, init_strength=init_strength, batch_size=1)
-                
-                if verbose: print("\n  ------ Finished decoding.  fakes.shape = ",fakes.shape)
-        ##------------------------------------------------------------------
+                    
+                #############  GENERATE NEW AUDIO  ###############
+                cfg_scales = [cfg_scale] # TODO: only allow 1 cfg for no, plan to add more
+                if verbose: print(f"\n  ------ Generating Audio, cfg_scales = {cfg_scales}, batch_size = {batch_size}, init_strength = {init_strength}")
+                fakes, fake_latents = model.generate(embeddings, cfg_scales=cfg_scales, 
+                                                     init_audio_latents=init_audio_latents, 
+                                                     init_strength=init_strength, 
+                                                     batch_size=batch_size)
+                if verbose: print("\n  ------ Finished generating.  fakes ",sdd_str(fakes))
+        ##----------------------Finished with true audio processing--------------------------
+        # now get it ready to be returned to gradio or wherever inputs came from 
+        
         if audio_info is None:  # supply gradio defaults if generated from text prompt
             audio_info = {'sr':48000, 'mono_in':False, 'tensor_in':False, 'int_in':True, 'channels_first':False}
+            
         new_audio_tup = repack_audio_tup(fakes, audio_info, verbose=verbose)
 
         if show_embeddings:
-            if verbose: print("generating embeddings graph")
+            if verbose: print("Plotting embeddings graph")
             fig = pca_point_cloud(fake_latents.float(), output_type='plotly', mode='lines+markers', color_scheme='')
         else:
             fig = None
@@ -251,35 +265,95 @@ def process_audio(
         msg = f"Error processing audio: {e}\n"+traceback.format_exc()
         raise gr.Error(msg) # either shows in GUI or gets printed later in CLI
     if show_embeddings:
-        return (new_audio_tup, fig) 
+        return (new_audio_tup, fig)
     else:
         return new_audio_tup
 
 
+def do_clear(args):
+    for x in args:
+        print("x = ",x)
+        try:
+            x.clear()
+        except:
+            pass
+        
 
 def run_gui(device, verbose=True, public=False, model_choices=["model1", "model2", "model3"], model_choice=None, **kwargs):
     """Launches the GUI"""
-    wrapper = partial(process_audio, device, verbose=verbose, show_embeddings=True) # package non-Gradio args into a single function
-    demo = gr.Interface(fn=wrapper, 
-                inputs=[gr.Audio(label="1st Audio Prompt"),
-                        gr.Textbox(value="", label="Text Prompt (Takes precedence over 1st Audio Prompt)"),
-                        #gr.Number(value=4, label="CFG scale (2 to 6 works)"),
+
+    css_code='body{background-image:url("harmonai_logo_big.png");}'
+
+    with gr.Blocks(title=kwargs['title'], css=css_code) as demo: 
+        toptext = gr.HTML(f"<center><h1>{kwargs['title']}</h1>{kwargs['description']}</center>")
+        with gr.Row():   #     label="Input 1"):
+            with gr.Box():
+                with gr.Column():
+                    audio1 = gr.Audio(label="1st Audio Prompt")
+                    textprompt1 = gr.Textbox(value="", label="Text Prompt 1 (Takes precedence over 1st Audio Prompt)")
+            with gr.Box():
+                with gr.Column():   # label="Model Controls"):
+                    audio2 = gr.Audio(label="Optional: 2nd Audio Prompt for interpolation")
+                    #interp_type = gr.Radio(['Spherical', 'Linear'], value='Spherical', label="Interpolation type (Leave it on Spherical)")
+                    textprompt2 = gr.Textbox(value="", label="Text Prompt 2 (Takes precedence over 2nd Audio Prompt)")
+
+        interp_slider = gr.Slider(minimum=-0.05, maximum=1.05, value=0.5, label="Interpolation scale (0 = all 1st prompt, 1 = all 2nd prompt")
+        with gr.Row():
+            with gr.Box():
+                with gr.Column():     #     label="Optional Init Audio"):
+                    init_audio = gr.Audio(label="Optional: Init audio")
+                    init_str_slider = gr.Slider(minimum=0.01, maximum=0.99, value=0.7, label="Strength of init audio (You probably want it high)")
+
+            with gr.Box():
+                with gr.Column():
+                    batch_slider = gr.Slider(minimum=1, maximum=8, value=1, step=1, label="Number of variations (strung along as one output)")
+                    cfg_slider = gr.Slider(minimum=-5, maximum=50, value=4, label="CFG scale (Typically 2 to 6, but go crazy)")
+                    model_select = gr.Radio(model_choices, 
+                                         value=(model_choices[0] if model_choice is None else model_choice), 
+                                         label="Model choice")
+                    
+                    submit_btn = gr.Button("Submit", variant='primary')
+                    clear_btn = gr.Button("Clear (Doesn't work right now)")
+
+        with gr.Row():    #     label="Outputs"):
+            output_audio = gr.Audio(label="Output audio")
+            embed_plot = gr.Plot(label="Embeddings 3DPCA")
+
+        inputs = [audio1, textprompt1, audio2, textprompt2, interp_slider, batch_slider,
+                        cfg_slider, model_select, init_audio, init_str_slider]
+        outputs = [output_audio, embed_plot]
+        wrapper = partial(process_audio, device, verbose=verbose, show_embeddings=True) # package non-Gradio args into a single function
+        submit_btn.click(fn=wrapper, inputs=inputs, outputs=outputs)
+        clear_btn.click(lambda: None, None, audio1 ) # not sure how to get this to work
+
+    simple_interface = False
+    if simple_interface: # overwrite complicated demo above
+        demo = gr.Interface(fn=wrapper, 
+                inputs=[
+                        gr.Audio(label="1st Audio Prompt"),
+                        gr.Textbox(value="", label="Text Prompt 1 (Takes precedence over 1st Audio Prompt)"),
+                        gr.Audio(label="Optional: 2nd Audio Prompt for interpolation"),
+                        gr.Textbox(value="", label="Text Prompt 2 (Takes precedence over 2nd Audio Prompt)"),
+                        #gr.Radio(['Spherical', 'Linear'], value='Spherical', label="Interpolation type (Leave it on Spherical)"),
+                        gr.Slider(minimum=-0.05, maximum=1.05, value=0.5, label="Interpolation scale (0 = all 1st audio, 1 = all 2nd audio"),
+                        gr.Slider(minimum=1, maximum=8, value=2, step=1, label="Number of variations (strung along as one output)"),
                         gr.Slider(minimum=-5, maximum=50, value=4, label="CFG scale (Typically 2, 4, or 6, but we'll let the range be a bit crazy for testing)"),
                         gr.Radio(model_choices, 
                                  value=(model_choices[0] if model_choice is None else model_choice), 
                                  label="Model choice"),
-                        gr.Audio(label="Optional: 2nd Audio Prompt for interpolation"),
-                        gr.Slider(minimum=-0.05, maximum=1.05, value=0.5, label="Interpolation scale (0 = all 1st audio, 1 = all 2nd audio"),
-                        gr.Radio(['Spherical', 'Linear'], value='Spherical', label="Interpolation type (Leave it on Spherical)"),
                         gr.Audio(label="Optional: Init audio"),
                         gr.Slider(minimum=0.01, maximum=0.99, value=0.7, label="Strength of init audio (You probably want it high)"),
-                        ], 
-                outputs=[gr.Audio(label="Output audio"),gr.Plot(label="Embeddings 3DPCA")], **kwargs)
+                        
+                        ],
+                outputs=[gr.Audio(label="Output audio"),
+                         gr.Plot(label="Embeddings 3DPCA")], **kwargs)
     if verbose: print("\nLaunching GUI.")
     
     auth = ( os.getenv('MIRAGE_USERNAME', ''), os.getenv('MIRAGE_PASSWORD', '') )
+    
+    
     _, _, public_link = demo.queue().launch(
-        share=public, prevent_thread_lock=True, show_error=True, auth=auth) 
+        share=public, prevent_thread_lock=True, show_error=True, auth=auth, favicon_path='harmonai_logo.png') 
 
     save_html_hosting_info(public_link)
 
@@ -365,4 +439,4 @@ if __name__ == '__main__':
         run_gui(device, model_choice=args.model,
             title="(MI)RAGE", verbose=args.verbose, public=args.public, model_choices=model_choices,
             #description="Music Information Retrieval-based Autoencoder for Generation via Entropy")
-            description="(Music Information) Retrieval-based Audio Generation via Entropy. \nIf this demo dies, reload https://hedges.belmont.edu/mirage/")
+            description="(Music Information) Retrieval-based Audio Generation via Entropy. <br><br>If this demo dies, reload <a href='https://hedges.belmont.edu/mirage/'>https://hedges.belmont.edu/mirage/</a>")
