@@ -39,6 +39,7 @@ from aeiou.viz import embeddings_table, pca_point_cloud, audio_spectrogram_image
 print("Finished with imports.")
 from time import sleep
 import random
+from einops import rearrange
 
 model, current_model_choice = None, '' # global vars to keep (same) model initialized thru multiple GUI ops 
 half_precision = False 
@@ -126,7 +127,7 @@ def get_model_ready(model_choice, device, verbose=True):
             model = CLAPDAE(device=device)
             model.setup()
             model = half_it(model)
-            
+        model.eval()
         current_model_choice = model_choice
     elif model is not None:
         if verbose: print(f"Model's already loaded! {model.__class__.__name__}")
@@ -139,7 +140,7 @@ def lerp(a, b, t):
     return (1 - t) * a + t * b
 
 def slerp(a, b, t):
-    """Spherical interpolation between two vectors a and b by a factor t"""
+    """Spherical interpolation between two vectors a and b by a factor t. Source: thanks ChatGPT"""
     a_norm = a / torch.norm(a, dim=-1, keepdim=True)
     b_norm = b / torch.norm(b, dim=-1, keepdim=True)
     dot = torch.sum(a_norm * b_norm, dim=-1, keepdim=True)
@@ -148,23 +149,38 @@ def slerp(a, b, t):
         return a
     sin_omega = torch.sin(omega)
     return (torch.sin((1 - t) * omega) / sin_omega * a_norm
-            + torch.sin(t * omega) / sin_omega * b_norm)
-
+          + torch.sin(      t * omega) / sin_omega * b_norm)
 
 def interp_embeddings(emb1, emb2, interp_scale=0.5, interp_type='Spherical'):
+    "interpolation choices. leave it on Spherical since CLAP is normalized"
     if emb2 is None: return emb1
     if interp_type=='Linear':
         return lerp(emb1, emb2, interp_scale)
     else:
         return slerp(emb1, emb2, interp_scale)
     
-def sdd_str(x): # shorthand because I print this info a lot
+    
+def sdd_str(x): # shorthand because I print this info a lot when debugging
     if x is not None:
         return f" shape, dtype, device = {x.shape}, {x.dtype}, {x.device}"
     else:
         return "None"
 
+@torch.no_grad()
+def crossfade_flatten(ab,     # audio batch
+                      cl=0,   # crossfade length in samples, 0=no-op
+                      fade_type='linear'): # 'linear'|'sine'
+    "flattens but cross-fades between batch elements.  Source: @drscotthawley ;-) "
+    if cl==0 or ab.shape[0]==1: return ab
+    assert len(ab.shape)==3, f"Expecting batched audio but got ab.shape = {ab.shape}"
+    fade_in = torch.linspace(0, 1, steps=cl, dtype=ab.dtype, device=ab.device) 
+    if fade_type=='sine': fade_in = torch.sin(fade_in * math.pi/2 )    # typically unused but why not
+    ab[1:,:,:cl] = ab[1:,:,:cl]*fade_in + ab[:-1,:,-cl:]*(1-fade_in)   # apply cross-fades
+    chopped_flattened = rearrange( ab[:,:, :-cl], 'b c n -> c (b n)' ) # chop off fade-out regions (and last piece)
+    return torch.cat( ( chopped_flattened, ab[-1,:,-cl:]), dim=-1 )    # stick last piece back on 
+
     
+@torch.no_grad()    
 def process_audio(
     device,           # pytorch device to use
     audio_tup=None,        # a tuple of (sr, waveform) where sr is sample rate
@@ -174,11 +190,13 @@ def process_audio(
     interp_scale=0.5, # relative strength of audio_tup & audio_tup2
     batch_size=1,
     cfg_scale=4.0,    # cfg scale, a number
-    model_choice='CLAPDAE-22s', # a string, the name of the model to use
+    #model_choice='CLAPDAE-22s', # a string, the name of the model to use
+    crossfade_secs=0.0,
     init_audio_tup=None, 
     init_strength=0.4,
     verbose=True, # how much info we print while executing
     show_embeddings=False, # whether to show the embeddings plot in the output - only in GUI mode
+    model_choice='CLAPDAE-22s', # a string, the name of the model to use
     ):
     """That code which processes the audio"""
     global half_precision
@@ -192,6 +210,7 @@ def process_audio(
     if cfg_scale is None: 
         raise gr.Error("No cfg_scale given.") 
         return None, None
+    
     
     half_precision = 'fp16' in model_choice
     
@@ -242,11 +261,15 @@ def process_audio(
                     
                 #############  GENERATE NEW AUDIO  ###############
                 cfg_scales = [cfg_scale] # TODO: only allow 1 cfg for no, plan to add more
+                crossfade_len=int(crossfade_secs*48000) # TODO: hardcoding sample rate here
                 if verbose: print(f"\n  ------ Generating Audio, cfg_scales = {cfg_scales}, batch_size = {batch_size}, init_strength = {init_strength}")
                 fakes, fake_latents = model.generate(embeddings, cfg_scales=cfg_scales, 
                                                      init_audio_latents=init_audio_latents, 
                                                      init_strength=init_strength, 
-                                                     batch_size=batch_size)
+                                                     batch_size=batch_size,
+                                                     crossfade_len=crossfade_len)
+                fakes = crossfade_flatten(fakes, crossfade_len)
+                    
                 if verbose: print("\n  ------ Finished generating.  fakes ",sdd_str(fakes))
         ##----------------------Finished with true audio processing--------------------------
         # now get it ready to be returned to gradio or wherever inputs came from 
@@ -270,7 +293,7 @@ def process_audio(
         return new_audio_tup
 
 
-def do_clear(args):
+def do_clear(args): #???
     for x in args:
         print("x = ",x)
         try:
@@ -308,9 +331,8 @@ def run_gui(device, verbose=True, public=False, model_choices=["model1", "model2
                 with gr.Column():
                     batch_slider = gr.Slider(minimum=1, maximum=8, value=1, step=1, label="Number of variations (strung along as one output)")
                     cfg_slider = gr.Slider(minimum=-5, maximum=50, value=4, label="CFG scale (Typically 2 to 6, but go crazy)")
-                    model_select = gr.Radio(model_choices, 
-                                         value=(model_choices[0] if model_choice is None else model_choice), 
-                                         label="Model choice")
+                    #model_select = gr.Radio(model_choices, value=(model_choices[0] if model_choice is None else model_choice), label="Model choice")
+                    crossfade_secs = gr.Slider(minimum=0, maximum=4, value=0, step=0.5, label="Cross-fade between variations (in seconds)")
                     
                     submit_btn = gr.Button("Submit", variant='primary')
                     clear_btn = gr.Button("Clear (Doesn't work right now)")
@@ -320,7 +342,7 @@ def run_gui(device, verbose=True, public=False, model_choices=["model1", "model2
             embed_plot = gr.Plot(label="Embeddings 3DPCA")
 
         inputs = [audio1, textprompt1, audio2, textprompt2, interp_slider, batch_slider,
-                        cfg_slider, model_select, init_audio, init_str_slider]
+                        cfg_slider, crossfade_secs, init_audio, init_str_slider]
         outputs = [output_audio, embed_plot]
         wrapper = partial(process_audio, device, verbose=verbose, show_embeddings=True) # package non-Gradio args into a single function
         submit_btn.click(fn=wrapper, inputs=inputs, outputs=outputs)
