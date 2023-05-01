@@ -169,13 +169,18 @@ def sdd_str(x): # shorthand because I print this info a lot when debugging
 @torch.no_grad()
 def crossfade_flatten(ab,     # audio batch
                       cl=0,   # crossfade length in samples, 0=no-op
-                      fade_type='linear'): # 'linear'|'sine'
-    "flattens but cross-fades between batch elements.  Source: @drscotthawley ;-) "
-    if cl==0 or ab.shape[0]==1: return ab
+                      fade_type='sine'): # 'linear'|'sine'|'sqrt'
+    "flattens but cross-fades between batch elements. "
+    if cl==0 or ab.shape[0]==1: return ab  # no need
     assert len(ab.shape)==3, f"Expecting batched audio but got ab.shape = {ab.shape}"
+    if not torch.is_tensor(ab): ab = torch.tensor(ab)
     fade_in = torch.linspace(0, 1, steps=cl, dtype=ab.dtype, device=ab.device) 
-    if fade_type=='sine': fade_in = torch.sin(fade_in * math.pi/2 )    # typically unused but why not
-    ab[1:,:,:cl] = ab[1:,:,:cl]*fade_in + ab[:-1,:,-cl:]*(1-fade_in)   # apply cross-fades
+    if fade_type=='sine': 
+        fade_in = torch.sin(fade_in * 0.5*math.pi )
+    elif fade_type=='sqrt':
+        fade_in = torch.sqrt(fade_in)
+    fade_out = fade_in.flip(dims=(0,))
+    ab[1:,:,:cl] = ab[1:,:,:cl]*fade_in + ab[:-1,:,-cl:]*fade_out     # apply cross-fades
     chopped_flattened = rearrange( ab[:,:, :-cl], 'b c n -> c (b n)' ) # chop off fade-out regions (and last piece)
     return torch.cat( ( chopped_flattened, ab[-1,:,-cl:]), dim=-1 )    # stick last piece back on 
 
@@ -320,22 +325,26 @@ def run_gui(device, verbose=True, public=False, model_choices=["model1", "model2
                     #interp_type = gr.Radio(['Spherical', 'Linear'], value='Spherical', label="Interpolation type (Leave it on Spherical)")
                     textprompt2 = gr.Textbox(value="", label="Text Prompt 2 (Takes precedence over 2nd Audio Prompt)")
 
-        interp_slider = gr.Slider(minimum=-0.05, maximum=1.05, value=0.5, label="Interpolation scale (0 = all 1st prompt, 1 = all 2nd prompt")
+        interp_default=0.5
+        interp_slider = gr.Slider(minimum=-0.05, maximum=1.05, value=interp_default, label="Interpolation scale (0 = all 1st prompt, 1 = all 2nd prompt")
         with gr.Row():
             with gr.Box():
                 with gr.Column():     #     label="Optional Init Audio"):
                     init_audio = gr.Audio(label="Optional: Init audio")
-                    init_str_slider = gr.Slider(minimum=0.01, maximum=0.99, value=0.7, label="Strength of init audio (You probably want it high)")
+                    int_str_default=0.7
+                    init_str_slider = gr.Slider(minimum=0.01, maximum=0.99, value=int_str_default, label="Strength of init audio (You probably want it high)")
 
             with gr.Box():
                 with gr.Column():
                     batch_slider = gr.Slider(minimum=1, maximum=8, value=1, step=1, label="Number of variations (strung along as one output)")
-                    cfg_slider = gr.Slider(minimum=-5, maximum=50, value=4, label="CFG scale (Typically 2 to 6, but go crazy)")
+                    cfg_default=4
+                    cfg_slider = gr.Slider(minimum=-5, maximum=50, value=cfg_default, label="CFG scale (Typically 2 to 6, but go crazy)")
                     #model_select = gr.Radio(model_choices, value=(model_choices[0] if model_choice is None else model_choice), label="Model choice")
+            
                     crossfade_secs = gr.Slider(minimum=0, maximum=4, value=0, step=0.5, label="Cross-fade between variations (in seconds)")
                     
                     submit_btn = gr.Button("Submit", variant='primary')
-                    clear_btn = gr.Button("Clear (Doesn't work right now)")
+                    clear_btn = gr.Button("Clear")
 
         with gr.Row():    #     label="Outputs"):
             output_audio = gr.Audio(label="Output audio")
@@ -346,8 +355,10 @@ def run_gui(device, verbose=True, public=False, model_choices=["model1", "model2
         outputs = [output_audio, embed_plot]
         wrapper = partial(process_audio, device, verbose=verbose, show_embeddings=True) # package non-Gradio args into a single function
         submit_btn.click(fn=wrapper, inputs=inputs, outputs=outputs)
-        clear_btn.click(lambda: None, None, audio1 ) # not sure how to get this to work
-
+        reset_vals = [None, None, None, None, interp_default, None, cfg_default, None, None, int_str_default, None, None]
+        clear_btn.click(lambda: reset_vals, outputs=inputs+outputs)
+        
+        
     simple_interface = False
     if simple_interface: # overwrite complicated demo above
         demo = gr.Interface(fn=wrapper, 
