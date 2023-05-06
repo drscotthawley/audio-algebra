@@ -21,6 +21,7 @@ NB: This entire source code can be pasted into a single Juptyer notebook cell an
 """
 print("Starting imports...")
 import os
+os.environ["PYTHONUNBUFFERED"] = "TRUE"  # sagemaker likes to buffer
 import sys 
 from pathlib import Path
 import argparse 
@@ -48,6 +49,7 @@ import requests
 from io import BytesIO
 
 
+
 # global vars
 model, current_model_choice = None, '' # global vars to keep (same) model initialized thru multiple GUI ops 
 half_precision = False 
@@ -56,6 +58,7 @@ GRADIO_TAB_STATE = "tab1"
 #PLOT_BGCOLOR = 'rgb(33,41,54)'  # panels in dark mode
 PLOT_BGCOLOR = 'rgb(12,15,24)'   # margins in dark mode
 cached_logo_fig, cached_pixels = None, None
+
 
 
 def unpack_audio_tup(audio_tup, verbose=True):
@@ -140,7 +143,7 @@ def get_model_ready(model_choice, device, verbose=True):
             if verbose: print("Hang on, we need to load a new model...")
             model = CLAPDAE(device=device)
             #model = KDiff_CLAPDAE(device=device) # not working yet
-            model.setup()
+            model.setup(model_len=model_choice)
             model = half_it(model)
         model.eval()
         current_model_choice = model_choice
@@ -212,9 +215,6 @@ def preproc_audio_tup_input(audio_tup):
         audio_tup = repack_audio_tup(waveform, audio_info)   
     return audio_tup
 
-def myPath(x): 
-    """none-tolerant path"""
-    return Path(x) if x is not None else None
     
     
 @torch.no_grad()
@@ -225,6 +225,18 @@ def embed_audio_or_text(embedder, waveform=None, text_prompt=""):
     return None
 
 
+
+def shapeNone(x):
+    return None if x is None else x.shape
+
+def pathNone(x): 
+    return '' if x is None else Path(x)
+
+def stemNone(x):
+    return '' if x is None else Path(x).stem
+
+def nameNone(x):
+    return '' if x is None else Path(x).name
 
 
 
@@ -247,9 +259,9 @@ def process_audio(
     audio_tup_a=None, text_prompt_a="", weight_a=1,   # "king"
     audio_tup_b=None, text_prompt_b="", weight_b=-1,  # "man"
     audio_tup_c=None, text_prompt_c="", weight_c=1,   # "woman"
+    model_choice='22s', # a string, the name of the model to use
     verbose=True, # how much info we print while executing
     show_embeddings=False, # whether to show the embeddings plot in the output - only in GUI mode
-    model_choice='CLAPDAE-22s', # a string, the name of the model to use
     sample_rate=48000,
     device='cuda',           # pytorch device to use
     ):
@@ -270,10 +282,27 @@ def process_audio(
         raise gr.Error("No cfg_scale given.") 
         return None, None
 
-    
-    audio_tups = [preproc_audio_tup_input(x) for x in [audio_tup, audio_tup2, audio_tup_a, audio_tup_b, audio_tup_c, init_audio_tup]]
+    audio_tups = [audio_tup, audio_tup2, audio_tup_a, audio_tup_b, audio_tup_c, init_audio_tup]
+    audio_strs = audio_tups
+    audio_tups = [preproc_audio_tup_input(x) for x in audio_tups]
     audio_str, audio2_str, audio_str_a, audio_str_b, audio_str_c, init_audio_str = audio_tups  # nowadays we get file strings, not numpy arrays
-                 
+    text_prompts = [text_prompt, text_prompt2, text_prompt_a, text_prompt_b, text_prompt_c]
+
+    # so many errors have been filename string formatting that i now want to trigger them as early as possible, before generation
+    audio_out_filename = f"M__"
+    try: 
+        for a, t in list(zip( audio_strs[:-1], text_prompts ) ):
+            print(f"   a, t =",a,t)
+            audio_out_filename += f"{t if t else nameNone(a)},_"
+        audio_out_filename += f"init-{nameNone(init_audio_str)},_{init_strength}"
+        audio_out_filename += f"_cfg{cfg_scale}_"
+        audio_out_filename = audio_out_filename.replace(' ','_').replace('/','\/').replace(';','').replace('&','')
+    except Exception as e:
+        print(f"Ok, some kind of exception creating the audio_out_filename: {e}.")
+    audio_out_filename += f"{seed_value}.wav"
+    print(f"\n                     BTW, audio_out_filename = {audio_out_filename}\n")
+    
+    
     half_precision = 'fp16' in model_choice
     
     try:
@@ -284,7 +313,6 @@ def process_audio(
             w, audinfo = unpack_audio_tup(atup, verbose=verbose)
             waveforms.append(w)
             audio_infos.append(audinfo)
-        text_prompts = [text_prompt, text_prompt2, text_prompt_a, text_prompt_b, text_prompt_c]
         wavs2embed = waveforms[:-1]  # don't include init audio when embedding
         assert len(wavs2embed) == len(text_prompts), "Lengths need to match"
         
@@ -292,6 +320,7 @@ def process_audio(
         
         
         ##---------------- Do the actual audio processing ------------------
+        if verbose: print("\n>>>>>>> Actually processing the audio now")
         for i in range(len(waveforms)):
             if waveforms[i] is not None: waveforms[i] = waveforms[i].to(model.device)  
             
@@ -300,8 +329,8 @@ def process_audio(
         for waveform, text_prompt in list(zip(wavs2embed, text_prompts)):
             emb = embed_audio_or_text(model.embed, waveform, text_prompt) # TODO: can we batch these? 
             embeddings_list.append(emb)       
-
-            
+        if verbose: print(f"Embeddings shapes = ",[shapeNone(x) for x in embeddings_list])
+        
         # Now manipulate the embeddings!
         if (None not in embeddings_list[0:2]) and (GRADIO_TAB_STATE == "tab1"):  # TODO need to check on Tab state
             print("      --- Interpolating CLAP Embeddings")
@@ -313,16 +342,21 @@ def process_audio(
                 if emb is not None: 
                     embeddings += weight * emb
             embeddings = embeddings / torch.norm(embeddings, dim=-1, keepdim=True)    # normalize the result
+        elif any(map(lambda item: item is not None, embeddings_list)): 
+            nn_indices = [i for i in range(len(embeddings_list)) if embeddings_list[i] is not None] # non-none indices
+            print(f"      ---  No interpolation or audio algebra, just gonnna regen from embeddings_list[{nn_indices[0]}]..")
+            embeddings = embeddings_list[nn_indices[0]]
         else:
-            raise gr.Error("Don't have sufficient non-None inputs, and/or tab error: GRADIO_TAB_STATE =",GRADIO_TAB_STATE)                     
+            raise gr.Error(f"Don't have sufficient non-None inputs, and/or tab error: GRADIO_TAB_STATE = {GRADIO_TAB_STATE}")                     
         embeddings  = half_it(embeddings) # note FP16 decoding sounds bad and clippy, but code's in place anyway
 
         
         # Init audio basis
         init_audio_latents, init_waveform = None, waveforms[-1]
-        print("        init_waveform.shape = ",(None if init_waveform is None else init_waveform.shape))
         if init_waveform is not None:  # init audio
-            print(f"      ---- Preparing latents of init_audio")
+            print(f"      ---- INIT AUDIO: Preparing latents of init_audio")
+            print("                        init_waveform.shape = ",shapeNone(init_waveform))
+
             init_waveform = half_it(init_waveform)
             # TODO: the following 4 lines are a hack to avoid off-by-1 size mismatches in Flavio's AE.
             new_init_waveform = torch.zeros([2,model.sample_size], device=device, dtype=init_waveform.dtype) 
@@ -354,17 +388,7 @@ def process_audio(
         #    audio_info = GRADIO_AUDIO_INFO
         #new_audio_tup = repack_audio_tup(fakes, audio_info, verbose=verbose)
         
-        # or what if we just supplied a filename?
-        audio_out_filename = "FILENAME_ERROR_BUT_DONT_CARE.wav"
-        try: 
-            for a, t in list(zip( audio_tups[:-1], text_prompts ) ):
-                audio_out_filename += f"{t if t else ('' if a is None else Path(a).name )}_" 
-            prompt1 = text_prompt if text_prompt else ( Path(audio_str).name if audio_str is not None else None )
-            prompt2 = text_prompt2 if text_prompt2 else ( Path(audio2_str).name if audio2_str is not None else None )
-            init_report = 'a-a' # if init_audio_str is None else ( Path(init_audio_str).name if init_audio_str is not None else None)
-            audio_out_filename = f"{prompt1}--{interp_scale}--{prompt2}__{init_report}_{init_strength}___{cfg_scale}_{seed_value}.wav".replace(' ','_')
-        except Exception as e:
-            print(f"Ok, some kind of exception creating the filename: {e}.")
+
         if verbose: print(f"\n   >>>>>>  Saving to output file {audio_out_filename}, fakes.shape = {fakes.shape}\n")
         
         fakes = fakes.clamp(-1, 1).mul(32767).to(torch.int16).cpu()
@@ -465,6 +489,7 @@ def run_gui(device, verbose=True, public=False, model_choices=["model1", "model2
     with gr.Blocks(title=kwargs['title'], css=css_code, theme=gr.themes.Base()) as demo:
         gr.HTML(f'<center><a href="https://www.harmonai.org/"><img src="https://images.squarespace-cdn.com/content/v1/62b318b33406753bcd6a17a5/ffa25141-8195-4916-8acf-7d5a44f08dfe/Transparent_Harmonai+Logo-02+%281%29.png?format=1500w" alt="Harmonai logo" width="100" height="100"></a><h1>{kwargs["title"]}</h1>{kwargs["description"]}</center>')        
         
+        ## embedding methods
         with gr.Tab("(Re)Gen / Interp") as tab1: 
             with gr.Row():   #     label="Input 1"):
                 with gr.Box():
@@ -498,13 +523,13 @@ def run_gui(device, verbose=True, public=False, model_choices=["model1", "model2
 
             tab2.select(fn=partial(set_active_tab_info,"tab2"))
       
-        with gr.Box():
+        with gr.Box():   # init audio
             with gr.Column():
                 init_audio = gr.Audio(label="Init Audio", type="filepath", elem_id="aud_comp3")
                 init_strength_default=0.7
                 init_strength_slider = gr.Slider(minimum=0.01, maximum=0.99, step=0.01, value=init_strength_default, label="Init Strength", info="'Wet'  <--->  'Dry'")
                     
-        with gr.Box():
+        with gr.Box():   # generation controls
             with gr.Row():
                 batch_slider = gr.Slider(minimum=1, maximum=8, value=1, step=1, label="Variations", info="Number of variations")
             #crossfade = gr.Slider(minimum=0, maximum=4, value=0, step=0.5, label="Cross-fade variations (s)")
@@ -514,8 +539,8 @@ def run_gui(device, verbose=True, public=False, model_choices=["model1", "model2
                 cfg_slider = gr.Slider(minimum=-5, maximum=50, step=0.5, value=cfg_default, label="CFG Scale", info="2 to 6, or...?")
                 with gr.Column(scale=0, min_width=110):
                     seed = gr.Number(label="Seed", value=np.random.randint(low=0, high=10**6-1) , precision=0)
-
-        #model_select = gr.Radio(model_choices, value=(model_choices[0] if model_choice is None else model_choice), label="Model choice")
+                with gr.Column(scale=0, min_width=110):
+                    model_select = gr.Radio(model_choices, value=(model_choices[-1] if model_choice is None else model_choice), label="Model choice")
         with gr.Box():
             with gr.Row():
                 with gr.Column():
@@ -536,13 +561,17 @@ def run_gui(device, verbose=True, public=False, model_choices=["model1", "model2
                   cfg_slider, seed, batch_slider, crossfade, 
                   audio_a, text_prompt_a, weight_a, 
                   audio_b, text_prompt_b, weight_b,
-                  audio_c, text_prompt_c, weight_c,
+                  audio_c, text_prompt_c, weight_c, model_select,
                  ]
         outputs = [output_audio, embed_plot]
         wrapper = partial(process_audio, device=device, verbose=verbose, show_embeddings=True) # package non-Gradio args into a single function
         submit_btn.click(fn=wrapper, inputs=inputs, outputs=outputs)
+        for tp in [text_prompt_1, text_prompt_2, text_prompt_a, text_prompt_b, text_prompt_c]:
+            tp.submit(fn=wrapper, inputs=inputs, outputs=outputs)
 
-        reset_vals = [None, "", None, "", interp_default, None, init_strength_default, cfg_default, np.random.randint(low=0, high=10**6-1) , 1,  None,  None, harmonai_logo_3d_plotly()]
+        reset_vals = [None, "", None, "", interp_default, None, init_strength_default, cfg_default, np.random.randint(low=0, high=10**6-1) , 1,  None,
+                      None, "", 1, None, "",-1,  None, "", 1, '22s',
+                      None, harmonai_logo_3d_plotly()]
         clear_btn.click(lambda: reset_vals, outputs=inputs+outputs)
         save_btn.click(lambda *objects:print(objects), inputs=inputs) 
             
@@ -551,7 +580,8 @@ def run_gui(device, verbose=True, public=False, model_choices=["model1", "model2
                         label="Examples: Click on a row to populate Inputs above, then press GENERATE",
                         #cache_examples=cache_examples, run_on_click=True, # Gradio bug in Blocks means these don't work
                         )
-        
+    
+    set_active_tab_info("tab1")
     if verbose: print("\nLaunching GUI.")
     
     auth = ( os.getenv('MIRAGE_USERNAME', ''), os.getenv('MIRAGE_PASSWORD', '') )
@@ -610,14 +640,14 @@ if __name__ == '__main__':
     app_name = Path(sys.argv[0]).stem # whatever we're going to call this script
     #print(f"Running {app_name}...")
 
-    model_choices = ['CLAPDAE-22s','CLAPDAE-22s-fp16']
+    model_choices = ['22s']#,'66s'] #['CLAPDAE-22s','CLAPDAE-66s']#  22s-fp16']
 
     parser = argparse.ArgumentParser(description=f"{app_name}", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-c', '--cache', action='store_true', help="Cache examples (takes time on startup but they execute fast)")
     parser.add_argument("-f", "--filename", type=str, help="Audio file to process. If none given, then runs GUI.", default="")
     parser.add_argument('-g', '--gui', action='store_true', help="Run GUI even if filename was specified")
     parser.add_argument('-i', '--init', action='store_true', help="Initialize/load model before doing other things (otherwise waits for audio passed in")
-    parser.add_argument("-m", "--model", type=str, default=model_choices[0], help=f"Model name to use, one of {model_choices}")
+    parser.add_argument("-m", "--model", type=str, default=model_choices[-1], help=f"Model name to use, one of {model_choices}")
     parser.add_argument("-o", "--output", type=str, help="Output audio file (default is [filename_stem]_processed.wav)", default="")
     parser.add_argument("-s", "--sr", type=int, default=48000, help="Sample rate at which to resample audio file")
     parser.add_argument('-p', '--public', action='store_true', help="Run on public IP address (for Gradio sharing)")
